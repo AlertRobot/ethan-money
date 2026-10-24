@@ -2,7 +2,7 @@
  * Ethan's Money: link between the phone app and the "E&S Budgie" Google Sheet.
  *
  * Setup (once):
- *   1. In the sheet: Extensions > Apps Script. Replace the contents of Code.gs with this file. Save.
+ *   1. Open script.google.com, New project (or Extensions > Apps Script in the sheet). Paste this file into Code.gs. Save.
  *   2. Choose the function "setup" in the toolbar and click Run. Allow access when Google asks.
  *      The log at the bottom shows your app key and a connect link.
  *   3. Deploy > New deployment > type "Web app". Execute as: Me. Who has access: Anyone. Deploy.
@@ -91,7 +91,15 @@ function checkKey_(k) {
 }
 
 // ---------- reading ----------
-function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+var SHEET_ID = "1D8Ql3fJuhXVXzcdlxs-eAd5e1f6AiaKwVd4hNRb24OM"; // E&S Budgie
+var ss_cache_ = null;
+function ss_() {
+  if (ss_cache_) return ss_cache_;
+  var active = null;
+  try { active = SpreadsheetApp.getActiveSpreadsheet(); } catch (x) {}
+  ss_cache_ = active || SpreadsheetApp.openById(SHEET_ID);
+  return ss_cache_;
+}
 function tz_() { return ss_().getSpreadsheetTimeZone() || Session.getScriptTimeZone() || "Europe/London"; }
 function cellOut_(v) {
   if (v instanceof Date) return Utilities.formatDate(v, tz_(), "yyyy-MM-dd");
