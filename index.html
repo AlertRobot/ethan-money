@@ -175,7 +175,7 @@ footer{text-align:center}
     <div class="card" id="todayCard" hidden>
       <h2>You can spend today</h2>
       <div class="tiles" id="todayTiles"></div>
-      <p class="small muted">These budgets build up a little every day, so a big spend early on shows as "ahead" until the days catch up. Anything you don't spend keeps building, ready for something bigger.</p>
+      <p class="small muted" id="todayNote"></p>
     </div>
 
     <div class="card" id="comingCard" hidden>
@@ -316,7 +316,7 @@ footer{text-align:center}
     flexWords: "food, fuel and spending",
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.2.0";
+  const APP_VERSION = "1.2.1";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -484,7 +484,7 @@ footer{text-align:center}
     });
     renderMonth(m, p, lines, daysLeft, totalDays, dayNo);
     renderAlerts(m, idx, p, lines, ex, daysLeft, today);
-    renderTodayTiles(m, p, lines);
+    renderTodayTiles(m, p, lines, daysLeft);
     renderComing(today);
     renderTrends(m, ex, idx);
     renderGlance();
@@ -506,7 +506,7 @@ footer{text-align:center}
         const mark = budget > 0 ? Math.min(100, expected / budget * 100) : 0;
         let trend = "";
         if (left < 0) trend = "Over by " + fmt(-left);
-        else if (o.drip) trend = (o.avail >= 0 ? fmt(o.avail) + " available today" : fmt(-o.avail) + " ahead of today's allowance");
+        else if (o.drip) trend = (o.avail >= 0 ? fmt(o.avail) + " available today" : fmt(-o.avail) + " over today's allowance");
         else if (!o.pace && !/fuel/i.test(line.label)) trend = left <= 0.004 ? "All used" : fmt(left) + " left";
         else if (o.projected === undefined) trend = budget > 0 ? (daysLeft > 0 ? fmt(perDay) + " a day left" : fmt(left) + " left") : "No budget this period";
         else if (o.projected > budget * 1.05) trend = "At this pace ~" + fmt0(o.projected) + ", over by " + fmt0(o.projected - budget);
@@ -540,7 +540,7 @@ footer{text-align:center}
       if (!(o.budget > 0) && !(o.sp > 0)) return;
       const n = short(o.label);
       if (o.left < -0.004) out.push(["bad", n + ": over this month's budget by " + fmt(-o.left) + "."]);
-      else if (o.drip && o.avail < -0.004) { const d = Math.ceil(-o.avail / o.daily); out.push(["warn", n + ": " + fmt(-o.avail) + " ahead of your allowance. It catches up in " + d + (d === 1 ? " day." : " days.")]); }
+      else if (o.drip && o.avail < -0.004) { const d = Math.ceil(-o.avail / o.daily); out.push(["warn", n + ": you've spent " + fmt(-o.avail) + " more than has built up so far, so hold off today. " + (d === 1 ? "Back on track tomorrow." : "Back on track in " + d + " days.")]); }
       else if (o.projected !== undefined && o.projected > o.budget * 1.05) out.push(["warn", n + ": at this pace about " + fmt0(o.projected) + " by payday, " + fmt0(o.projected - o.budget) + " over."]);
     });
     const real = ex.filter(e => !e.pending || true);
@@ -555,15 +555,37 @@ footer{text-align:center}
     out.forEach(([lvl, t]) => { const li = document.createElement("li"); li.className = "al " + lvl; li.innerHTML = `<span class="dot" aria-hidden="true"></span><span>${esc(t)}</span>`; ul.appendChild(li); });
   }
 
-  function renderTodayTiles(m, p, lines) {
+  function renderTodayTiles(m, p, lines, daysLeft) {
     const box = $("todayTiles"); box.innerHTML = "";
-    lines.filter(o => o.drip).forEach(o => {
-      const b = document.createElement("button"); b.type = "button"; b.className = "tile" + (o.avail < 0 ? " warn" : "");
-      const carry = Math.abs(o.carry) >= 0.5 ? `<span class="small muted">${o.carry > 0 ? "Includes " + fmt(o.carry) + " saved from earlier months" : "Includes " + fmt(-o.carry) + " overspent earlier"}</span>` : "";
-      b.innerHTML = `<span class="lbl">${esc(short(o.label))}</span><span class="big">${fmt(o.avail)}</span><span class="small">${o.avail >= 0 ? "available today" : "ahead of your allowance"}</span><span class="small muted">+${fmt(o.daily)} each day · ${fmt(o.sp)} of ${fmt(o.budget)} spent</span>${carry}`;
+    const pots = lines.filter(o => o.flex && (o.budget > 0 || o.sp > 0));
+    pots.sort((a, b) => (b.drip ? 1 : 0) - (a.drip ? 1 : 0));
+    const back = n => n <= 1 ? "Back on track tomorrow." : "Back on track in " + n + " days.";
+    pots.forEach(o => {
+      const b = document.createElement("button"); b.type = "button";
+      const pct = o.budget > 0 ? Math.min(100, o.sp / o.budget * 100) : (o.sp > 0 ? 100 : 0);
+      const bar = `<div class="bar${o.left < 0 ? " over" : ""}"><span style="width:${pct}%"></span></div>`;
+      let big, main, sub;
+      if (o.drip) {
+        const over = o.avail < -0.004;
+        b.className = "tile" + (over ? " warn" : "");
+        big = fmt(Math.max(0, o.avail));
+        main = over ? "to spend today. You're " + fmt(-o.avail) + " over so far. " + back(Math.ceil(-o.avail / o.daily)) : "to spend today";
+        sub = "+" + fmt(o.daily) + " each day · " + fmt(o.sp) + " of " + fmt(o.budget) + " spent";
+        if (Math.abs(o.carry) >= 0.5) sub += o.carry > 0 ? " · includes " + fmt(o.carry) + " saved from earlier months" : " · " + fmt(-o.carry) + " overspent earlier";
+      } else {
+        b.className = "tile" + (o.left < -0.004 ? " over" : "");
+        big = fmt(o.left);
+        main = o.left < -0.004 ? "over budget" : (daysLeft > 0 && o.left > 0 ? "left · about " + fmt(o.left / daysLeft) + " a day" : "left until payday");
+        sub = fmt(o.sp) + " of " + fmt(o.budget) + " spent";
+      }
+      b.innerHTML = `<span class="lbl">${esc(short(o.label))}</span><span class="big">${big}</span>${bar}<span class="small">${esc(main)}</span><span class="small muted">${esc(sub)}</span>`;
       b.addEventListener("click", () => openBudgetCell(m, o.line, p));
       box.appendChild(b);
     });
+    const drips = pots.filter(o => o.drip).map(o => short(o.label).toLowerCase());
+    $("todayNote").textContent = drips.length
+      ? (drips.length > 1 ? drips.slice(0, -1).join(", ") + " and " + drips[drips.length - 1] : drips[0]).replace(/^./, c => c.toUpperCase()) + " build up a little every day, so you can't spend the lot at once. Whatever you don't spend keeps building, ready for something bigger. The other pots show what's left until payday."
+      : "What's left in each pot until payday.";
     $("todayCard").hidden = !box.children.length;
   }
 
