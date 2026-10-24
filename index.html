@@ -335,15 +335,14 @@ footer{text-align:center}
     <div class="card">
       <div class="row"><h2>Should be in total</h2><span class="big" id="potTotal">–</span></div>
       <p class="small muted" id="potInfo"></p>
-      <p class="note" id="potCheck" hidden></p>
     </div>
     <div class="card" id="potTipsCard" hidden>
       <h2>To make them match the plan</h2>
-      <ul class="list todo" id="potTips"></ul>
-      <p class="small muted">You paid for these from a different <span class="w-pot">pot</span> or account than the one the money was set aside in. Move the money across and tick it off, or leave it and just compare the total.</p>
+      <ul class="list" id="potTips"></ul>
+      <p class="small muted">You paid for these from a different <span class="w-pot">pot</span> or account than the one the money was set aside in. Move the money across in your banking app, then tick it off in To do on the Today tab.</p>
     </div>
     <div id="potList" style="display:grid;gap:10px"></div>
-    <p class="small muted" id="potHow">Tap "Enter what it has" and type the balance your banking app shows. It's saved on the Pot check tab of your sheet. How each budget line is counted is set in the "When it leaves" column of the App settings tab.</p>
+    <p class="small muted">Worked out from your budget and the payments you've logged. If your banking app shows something different, a payment probably hasn't been logged yet, or it was paid from a different <span class="w-pot">pot</span>. How each line is counted is set in the "When it leaves" column of the App settings tab.</p>
   </section>
 
   <!-- SHEET -->
@@ -388,7 +387,7 @@ footer{text-align:center}
     pot: "pot", pots: "pots",                                 // what the bank calls them (Monzo pots, Starling Spaces)
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.6.0";
+  const APP_VERSION = "1.6.1";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1164,59 +1163,24 @@ footer{text-align:center}
     if (!pm) { $("potInfo").textContent = "Couldn't read the Budget tab."; return; }
     $("potTotal").textContent = fmt(pm.total);
     $("potInfo").textContent = "Across your main account and " + CONFIG.pots + " on " + nice(pm.today) + ", if everything has gone to plan." + (pm.extras.length && pm.cur.name === "Now" && !pm.timing && !pm.lActive.some(p => /whole/i.test(p.how)) ? " This counts money that may not have arrived yet: " + pm.extras.map(x => x.label + " " + fmt(x.amount)).join(", ") + "." : "");
-    const tIso = iso(pm.today);
-    const checked = pm.pots.filter(p => isIso(p.checked) && p.checked === tIso && p.actual !== "");
-    const allToday = checked.length && checked.length === pm.pots.filter(p => p.editable).length;
-    const nt = $("potCheck");
-    if (allToday) { const act = checked.reduce((x, p) => x + num(p.actual), 0), d = act - pm.total; nt.hidden = false; nt.className = "note" + (Math.abs(d) < 1 ? " ok" : (d < 0 ? " bad" : "")); nt.textContent = "Your banking app shows " + fmt(act) + " in total today. " + (Math.abs(d) < 1 ? "That matches the plan." : (d > 0 ? "That's " + fmt(d) + " more than planned: something may not be logged as spent yet, or money came in that isn't in the plan." : "That's " + fmt(-d) + " less than planned: check for payments that haven't been logged in the app.")); }
-    else nt.hidden = true;
     const tl = $("potTips"); tl.innerHTML = "";
     const open = openTips(pm);
-    open.forEach(({t, key, left}) => {
+    open.forEach(({t, left}) => {
       const li = document.createElement("li");
-      li.innerHTML = `<input type="checkbox" aria-label="Done: move from ${esc(t.from)} to ${esc(t.to)}"><span style="min-width:0">Move from <b>${esc(t.from)}</b> to <b>${esc(t.to)}</b><br><span class="small muted">You paid for ${esc([...t.what].join(" and "))} from ${esc(t.to)}.</span></span><span class="num">${fmt(left)}</span>`;
-      li.querySelector("input").addEventListener("change", e => { if (!e.target.checked) return; li.classList.add("gone"); setDone(key, round2(t.amount)); setTimeout(render, 260); });
+      li.innerHTML = `<span style="min-width:0">Move from <b>${esc(t.from)}</b> to <b>${esc(t.to)}</b><br><span class="small muted">You paid for ${esc([...t.what].join(" and "))} from ${esc(t.to)}.</span></span><span class="num">${fmt(left)}</span>`;
       tl.appendChild(li);
     });
     $("potTipsCard").hidden = !open.length;
     pm.pots.forEach(p => {
       const d = document.createElement("div"); d.className = "card potc";
-      let act = "";
-      if (p.actual !== "" && p.actual !== null && p.actual !== undefined && String(p.actual).trim() !== "") {
-        const a = num(p.actual), when = isIso(p.checked) ? parseIso(p.checked) : null, isToday = isIso(p.checked) && p.checked === tIso;
-        const diff = a - p.should;
-        act = `<span class="small">Your app showed <b>${fmt(a)}</b>${when ? (isToday ? " today" : " on " + nice(when)) : ""}</span>` + (isToday ? `<span class="diff${Math.abs(diff) < 1 ? "" : (diff < 0 ? " bad" : " warn")}">${Math.abs(diff) < 1 ? "Matches" : (diff > 0 ? fmt(diff) + " more" : fmt(-diff) + " short")}</span>` : `<span class="small muted">Check again to compare</span>`);
-      }
       const parts = [...p.parts.values()].filter(x => Math.abs(x.amount) > 0.004 || x.spent > 0);
       d.innerHTML = `<div class="row"><h3>${esc(p.name)}</h3><span class="num" style="font-size:1.25rem">${fmt(p.should)}</span></div>
         ${p.ledger ? `<p class="small muted">From your ${esc(p.ledger.name)} tab until ${nice(parseIso(p.ledger.last))}.</p>` : ""}
-        <div class="act">${act || '<span class="small muted">Not checked yet</span>'}</div>
-        ${p.editable ? '<div class="btns"><button class="btn ghost" type="button" data-a="check" style="min-height:40px;padding:8px 14px">Enter what it has</button></div>' : ""}
+
         ${parts.length ? `<details><summary>How it's worked out</summary><ul class="list small">${parts.map(x => `<li><span style="min-width:0">${esc(short(x.label))}<br><span class="muted">${x.kind === "spend" ? fmt(x.budget) + " budgeted" + (x.spent > 0 ? " − " + fmt(x.spent) + " spent" : "") : esc([...x.notes].join(", "))}</span></span><span class="num">${fmt(x.amount)}</span></li>`).join("")}</ul></details>` : '<p class="small muted">Nothing planned for this one right now.</p>'}`;
-      d.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => openPotCheck(p, pm)));
       list.appendChild(d);
     });
-    $("potHow").hidden = !pm.pots.some(p => p.editable);
   }
-  // what each pot has now: today's check if there is one, otherwise what it should have
-  const potNow = (p, tIso) => (isIso(p.checked) && p.checked === tIso && String(p.actual).trim() !== "") ? num(p.actual) : p.should;
-  function potSummary(pm) {
-    const tIso = iso(pm.today);
-    const rows = pm.pots.filter(p => p.editable || Math.abs(p.should) > 0.004);
-    const total = rows.reduce((x, p) => x + potNow(p, tIso), 0);
-    return `<div class="summ"><div class="row"><b>Total</b><span class="num">${fmt(total)}</span></div>${rows.map(p => `<div class="row small"><span>${esc(p.name)}</span><span class="num" style="font-weight:600">${fmt(potNow(p, tIso))}</span></div>`).join("")}</div>`;
-  }
-  function openPotCheck(p, pm) {
-    edit = {pot: p.row};
-    $("dTitle").textContent = p.name;
-    $("dWhere").textContent = "What does your banking app show for this one right now? It should have " + fmt(p.should) + ".";
-    $("dField").innerHTML = `${pm ? potSummary(pm) : ""}<div class="field"><label for="dIn">${esc(p.name)} has (£)</label><input id="dIn" class="amount" type="number" inputmode="decimal" step="0.01" value="${p.actual === "" ? "" : esc(p.actual)}" placeholder="0.00"></div>`;
-    $("dStatus").textContent = st.cfg ? "" : "Connect to your sheet first.";
-    $("dSave").disabled = !st.cfg;
-    $("dlg").showModal();
-    setTimeout(() => { const i = $("dIn"); if (i) { i.focus(); try { i.select(); } catch (e) {} } }, 50);
-  }
-
   // ---------- sheet view ----------
   let sheetTab = "Budget";
   function renderSheet() {
@@ -1309,13 +1273,6 @@ footer{text-align:center}
   $("dForm").addEventListener("submit", async ev => {
     ev.preventDefault(); if (!edit) { $("dlg").close(); return; }
     const i = $("dIn"); let value;
-    if (edit.pot !== undefined) {
-      if (i.value === "") { $("dStatus").textContent = "Type the balance first."; return; }
-      $("dSave").disabled = true; $("dStatus").textContent = "Saving to the sheet…";
-      try { await call({action: "set", tab: "Pot check", row: edit.pot, col: 1, type: "number", value: Number(i.value)}); await call({action: "set", tab: "Pot check", row: edit.pot, col: 2, type: "date", value: iso(new Date())}); $("dlg").close(); render(); }
-      catch (e) { $("dStatus").textContent = e.code === "offline" ? "You're offline. Checking a pot needs a connection." : e.message; }
-      $("dSave").disabled = false; return;
-    }
     if (edit.type === "bool") value = i.checked;
     else if (edit.type === "number") { value = i.value === "" ? "" : Number(i.value); if (edit.pct && value !== "") value = value / 100; }
     else value = i.value;
