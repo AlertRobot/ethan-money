@@ -193,7 +193,7 @@ function readLog_() {
       period: String(r[5] || ""),
       notes: String(r[6] || ""),
       shared: r[7] === true,
-      id: String(r[8] || "")
+      id: typeof r[8] === "string" ? r[8] : ""
     });
   });
   return out;
@@ -212,7 +212,7 @@ function addExpenses_(list) {
   var last = Math.max(sh.getLastRow(), LOG_FIRST_ROW);
   var existing = sh.getRange(LOG_FIRST_ROW, 1, last - LOG_FIRST_ROW + 1, 9).getValues();
   var ids = {};
-  existing.forEach(function (r) { if (r[8]) ids[String(r[8])] = true; });
+  existing.forEach(function (r) { if (r[8] && typeof r[8] === "string") ids[r[8]] = true; });
   var periodFormula = sh.getRange(LOG_FIRST_ROW, 6).getFormulaR1C1();
   var added = 0, skipped = 0;
   var nextFree = 0; // index into existing
@@ -237,7 +237,10 @@ function addExpenses_(list) {
     var idx = findFree();
     var row = LOG_FIRST_ROW + idx;
     sh.getRange(row, 1, 1, 5).setValues([[d, String(x.desc || "Payment").slice(0, 120), String(x.category || ""), amount, String(x.paidFrom || "Main account")]]);
-    sh.getRange(row, 7, 1, 3).setValues([[String(x.notes || "").slice(0, 200), x.shared === true, id]]);
+    sh.getRange(row, 7, 1, 2).setValues([[String(x.notes || "").slice(0, 200), x.shared === true]]);
+    var idCell = sh.getRange(row, 9);
+    if (idCell.getDataValidation()) idCell.clearDataValidations();
+    idCell.setValue(id);
     var pf = sh.getRange(row, 6);
     if (!pf.getFormula() && periodFormula) pf.setFormulaR1C1(periodFormula);
     existing[idx] = [d, x.desc, x.category, amount, x.paidFrom, "", x.notes, x.shared === true, id];
