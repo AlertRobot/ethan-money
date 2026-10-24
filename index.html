@@ -165,7 +165,7 @@ footer{text-align:center}
     <button role="tab" id="tab-view" aria-selected="true" aria-controls="p-today"><span id="viewName">Today</span> <span aria-hidden="true">▾</span></button>
     <button role="tab" id="tab-add" aria-selected="false" aria-controls="p-add">Add</button>
     <button role="tab" id="tab-pay" aria-selected="false" aria-controls="p-pay">Payday</button>
-    <button role="tab" id="tab-pots" aria-selected="false" aria-controls="p-pots">Pots</button>
+    <button role="tab" id="tab-pots" aria-selected="false" aria-controls="p-pots"><span class="w-Pots">Pots</span></button>
   </nav>
 
   <div class="seg" id="viewSeg" role="group" aria-label="Show">
@@ -292,7 +292,7 @@ footer{text-align:center}
           <div class="field"><label for="aDate">Date</label><input id="aDate" type="date" required></div>
         </div>
         <div class="field"><label for="aNotes">Notes (optional)</label><input id="aNotes" type="text" maxlength="200" autocomplete="off"></div>
-        <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="aShared" style="width:24px;height:24px;accent-color:var(--accent)"> Shared with Sophie (she owes half)</label>
+        <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="aShared" style="width:24px;height:24px;accent-color:var(--accent)"> <span id="aSharedLab">Split with your partner (half comes out of each budget)</span></label>
         <button class="btn wide" type="submit" id="aBtn">Add payment</button>
         <p class="status" id="aStatus" aria-live="polite"></p>
       </form>
@@ -320,13 +320,13 @@ footer{text-align:center}
   <!-- PAYDAY -->
   <section id="p-pay" role="tabpanel" aria-labelledby="tab-pay" hidden style="display:grid;gap:14px">
     <div class="card">
-      <h2>Pot sorter</h2>
+      <h2><span class="w-Pot">Pot</span> sorter</h2>
       <div class="chips" id="payChips" role="group" aria-label="Pay period"></div>
       <div class="row"><span class="muted" id="payIn"></span><span class="big" id="payTotal">–</span></div>
       <div class="bar" aria-hidden="true"><span id="payBar"></span></div>
       <p class="small muted" id="payDone"></p>
       <div id="pots"></div>
-      <p class="small muted">Amounts come from that column of the Budget tab. Which pot each line goes to is set on the App settings tab, which you can change in the Sheet section.</p>
+      <p class="small muted">Amounts come from that column of the Budget tab. Which <span class="w-pot">pot</span> each line goes to is set on the App settings tab, which you can change in the Sheet section.</p>
     </div>
   </section>
 
@@ -336,12 +336,11 @@ footer{text-align:center}
       <div class="row"><h2>Should be in total</h2><span class="big" id="potTotal">–</span></div>
       <p class="small muted" id="potInfo"></p>
       <p class="note" id="potCheck" hidden></p>
-      <button class="btn" type="button" id="moveBtn">Move money between pots</button>
     </div>
     <div class="card" id="potTipsCard" hidden>
       <h2>To make them match the plan</h2>
       <ul class="list todo" id="potTips"></ul>
-      <p class="small muted">You paid for these from a different pot or account than the one the money was set aside in. Move the money across and tick it off, or leave it and just compare the total.</p>
+      <p class="small muted">You paid for these from a different <span class="w-pot">pot</span> or account than the one the money was set aside in. Move the money across and tick it off, or leave it and just compare the total.</p>
     </div>
     <div id="potList" style="display:grid;gap:10px"></div>
     <p class="small muted" id="potHow">Tap "Enter what it has" and type the balance your banking app shows. It's saved on the Pot check tab of your sheet. How each budget line is counted is set in the "When it leaves" column of the App settings tab.</p>
@@ -385,9 +384,11 @@ footer{text-align:center}
     pace: /food|entertain/i,                                  // steady spending that gets a pace forecast
     drip: /food|entertain/i,                                  // budgets that build up a little each day
     flexWords: "food, fuel and spending",
+    partner: "Sophie",                                        // who split payments are shared with
+    pot: "pot", pots: "pots",                                 // what the bank calls them (Monzo pots, Starling Spaces)
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.5.0";
+  const APP_VERSION = "1.6.0";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -514,7 +515,8 @@ footer{text-align:center}
     st.queue.filter(q => q.type === "add").forEach(q => kept.push(Object.assign({}, q.expense, {pending: true})));
     return kept.filter(e => isIso(e.date)).sort((a, b) => b.date.localeCompare(a.date) || (b.row || 1e9) - (a.row || 1e9));
   }
-  function spent(list, cat, from, to) { const f = iso(from), t = iso(to); return list.filter(e => e.category === cat && e.date >= f && e.date < t).reduce((s, e) => s + num(e.amount), 0); }
+  // a split payment only counts half against your budget; the other half is settled with your partner
+  function spent(list, cat, from, to, full) { const f = iso(from), t = iso(to); return list.filter(e => e.category === cat && e.date >= f && e.date < t).reduce((s, e) => s + num(e.amount) * (e.shared && !full ? 0.5 : 1), 0); }
 
   // ---------- render ----------
   function render() {
@@ -656,8 +658,8 @@ footer{text-align:center}
     });
     const drips = pots.filter(o => o.drip).map(o => short(o.label).toLowerCase());
     $("todayNote").textContent = drips.length
-      ? (drips.length > 1 ? drips.slice(0, -1).join(", ") + " and " + drips[drips.length - 1] : drips[0]).replace(/^./, c => c.toUpperCase()) + (drips.length > 1 ? " build" : " builds") + " up a little every day, so you can't spend the lot at once. Whatever you don't spend keeps building, ready for something bigger. The other pots show what's left until payday."
-      : "What's left in each pot until payday.";
+      ? (drips.length > 1 ? drips.slice(0, -1).join(", ") + " and " + drips[drips.length - 1] : drips[0]).replace(/^./, c => c.toUpperCase()) + (drips.length > 1 ? " build" : " builds") + " up a little every day, so you can't spend the lot at once. Whatever you don't spend keeps building, ready for something bigger. The other " + CONFIG.pots + " show what's left until payday."
+      : "What's left in each " + CONFIG.pot + " until payday.";
     $("todayCard").hidden = !box.children.length;
   }
 
@@ -691,7 +693,7 @@ footer{text-align:center}
       const plan = potPlan(m, p), ticks = st.ticks["pay-" + iso(p.start)] || {};
       const left = plan.list.filter(x => x.pot !== "Main account" && !ticks[x.pot]);
       const key = "pay|" + iso(p.start);
-      if (left.length && !isDone(key)) items.push({key, what: "Sort your pay into pots", sub: left.length + " pot" + (left.length === 1 ? "" : "s") + " still to move", amount: "", action: "pay", val: true});
+      if (left.length && !isDone(key)) items.push({key, what: "Sort your pay into " + CONFIG.pots, sub: left.length + " " + (left.length === 1 ? CONFIG.pot : CONFIG.pots) + " still to move", amount: "", action: "pay", val: true});
     }
     openTips(potModel()).forEach(x => items.push({key: x.key, what: "Move from " + x.t.from + " to " + x.t.to, sub: "You paid for " + [...x.t.what].join(" and ") + " from " + x.t.to, amount: fmt(x.left), action: "pots", val: round2(x.t.amount)}));
     return items;
@@ -700,7 +702,7 @@ footer{text-align:center}
     const items = todoItems(m, p, today), ul = $("todo"); ul.innerHTML = "";
     items.forEach(it => {
       const li = document.createElement("li");
-      li.innerHTML = `<input type="checkbox" aria-label="Done: ${esc(it.what)}"><span style="min-width:0"><span class="what">${esc(it.what)}</span><br><span class="small muted">${esc(it.sub)}</span>${it.action ? ` · <button class="link" type="button">${it.action === "pay" ? "Open Payday" : "See pots"}</button>` : ""}</span><span class="num"${it.good ? ' style="color:var(--good)"' : ""}>${esc(it.amount)}</span>`;
+      li.innerHTML = `<input type="checkbox" aria-label="Done: ${esc(it.what)}"><span style="min-width:0"><span class="what">${esc(it.what)}</span><br><span class="small muted">${esc(it.sub)}</span>${it.action ? ` · <button class="link" type="button">${it.action === "pay" ? "Open Payday" : "See " + CONFIG.pots}</button>` : ""}</span><span class="num"${it.good ? ' style="color:var(--good)"' : ""}>${esc(it.amount)}</span>`;
       li.querySelector("input").addEventListener("change", e => { if (!e.target.checked) return; li.classList.add("gone"); setDone(it.key, it.val); setTimeout(render, 260); });
       const b = li.querySelector("button.link"); if (b) b.addEventListener("click", () => show(it.action));
       ul.appendChild(li);
@@ -812,7 +814,7 @@ footer{text-align:center}
     const ul = $("recent"); ul.innerHTML = "";
     allExpenses().slice(0, 30).forEach(e => {
       const li = document.createElement("li");
-      li.innerHTML = `<span style="min-width:0"><span class="what">${esc(e.desc)}</span><br><span class="small muted">${nice(parseIso(e.date))} · ${esc(short(e.category))}${e.paidFrom ? " · " + esc(e.paidFrom) : ""}${e.shared ? " · shared" : ""}${e.pending ? " · waiting to sync" : ""}</span></span><span style="display:flex;align-items:center;gap:2px"><span class="num">${fmt(num(e.amount))}</span><button class="iconbtn" type="button" aria-label="Delete ${esc(e.desc)}">✕</button></span>`;
+      li.innerHTML = `<span style="min-width:0"><span class="what">${esc(e.desc)}</span><br><span class="small muted">${nice(parseIso(e.date))} · ${esc(short(e.category))}${e.paidFrom ? " · " + esc(e.paidFrom) : ""}${e.shared ? " · split with " + esc(CONFIG.partner) : ""}${e.pending ? " · waiting to sync" : ""}</span></span><span style="display:flex;align-items:center;gap:2px"><span class="num">${fmt(num(e.amount))}</span><button class="iconbtn" type="button" aria-label="Delete ${esc(e.desc)}">✕</button></span>`;
       const btn = li.querySelector("button");
       btn.addEventListener("click", () => {
         if (btn.dataset.armed !== "1") { btn.dataset.armed = "1"; btn.textContent = "Delete?"; btn.style.color = "var(--bad)"; setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ""; btn.textContent = "✕"; btn.style.color = ""; } }, 3000); return; }
@@ -965,7 +967,7 @@ footer{text-align:center}
     $("payIn").textContent = (p.name === "Now" ? "Money now " : "Pay on " + nice(p.start) + ": ") + fmt(plan.pay) + (plan.extras.length ? " · plus " + plan.extras.map(x => x.label.toLowerCase() + " " + fmt(x.amount)).join(", ") : "") + " · to move:";
     $("payTotal").textContent = fmt(toMove);
     $("payBar").style.width = (toMove ? doneAmt / toMove * 100 : 0) + "%";
-    $("payDone").textContent = fmt(doneAmt) + " of " + fmt(toMove) + " moved. Tick each pot once you've moved the money.";
+    $("payDone").textContent = fmt(doneAmt) + " of " + fmt(toMove) + " moved. Tick each " + CONFIG.pot + " once you've moved the money.";
     const box = $("pots"); box.innerHTML = "";
     plan.list.forEach(x => {
       const main = x.pot === "Main account";
@@ -1037,7 +1039,7 @@ footer{text-align:center}
     // a "Next 5 weeks" style tab can stand in for a pot (or the whole account) until its last date
     const lname = Object.keys(st.snap.tabs || {}).find(n => /^next/i.test(n)); const lt = lname && tab(lname);
     let ledger = null;
-    if (lt) { const h = lt.v.findIndex(r => String(r[0]).trim() === "Date" && String(r[1]).trim() === "What"); if (h >= 0) { const rows = []; for (let r = h + 1; r < lt.v.length; r++) if (isIso(lt.v[r][0])) rows.push({date: lt.v[r][0], bal: num(lt.v[r][4])}); if (rows.length) ledger = {name: lname, rows, first: rows[0].date, last: rows[rows.length - 1].date}; } }
+    if (lt) { const h = lt.v.findIndex(r => String(r[0]).trim() === "Date" && String(r[1]).trim() === "What"); if (h >= 0) { const fc = lt.v[h].findIndex(x => /^(paid from|from|space|pot)/i.test(String(x).trim())); const rows = []; for (let r = h + 1; r < lt.v.length; r++) if (isIso(lt.v[r][0])) rows.push({date: lt.v[r][0], bal: num(lt.v[r][4]), what: String(lt.d[r][1] || "").trim(), inn: num(lt.v[r][2]), out: num(lt.v[r][3]), from: fc > 0 ? String(lt.v[r][fc] || "").trim() : ""}); if (rows.length) ledger = {name: lname, rows, first: rows[0].date, last: rows[rows.length - 1].date}; } }
     const lActive = pots.filter(p => ledger && /next/i.test(p.how) && tIso >= ledger.first && tIso < ledger.last);
     const lNames = new Set(lActive.map(p => p.name)), whole = lActive.some(p => /whole/i.test(p.how));
     const skip = (pot, k) => lActive.length && iso(m.periods[k].next) <= ledger.last && (whole || lNames.has(pot));
@@ -1051,14 +1053,18 @@ footer{text-align:center}
       [...m.spending, ...m.saving].forEach(line => {
         const B = cellNum(m.t, line.row, pk.col);
         const w = when[line.label] || (FLEX_RE.test(line.label) ? "as you spend" : "payday");
-        if (line.label === "Personal bills" && /per bill/.test(w) && pb) {
-          const h = findRow(pb, "Bill"), c = h >= 0 ? pb.v[h].findIndex(x => String(x).trim() === pk.name) : -1, end = findRowStarts(pb, "Total", h + 1);
+        const bt = /per bill/.test(w) ? (tab(line.label) || tab("Bills")) : null;
+        if (bt) {
+          const h = findRow(bt, "Bill"), c = h >= 0 ? bt.v[h].findIndex(x => String(x).trim() === pk.name) : -1, end = findRowStarts(bt, "Total", h + 1);
+          const fc = h >= 0 ? bt.v[h].findIndex(x => /paid from/i.test(String(x))) : -1, dc = h >= 0 ? bt.v[h].findIndex(x => /usual day/i.test(String(x))) : -1;
           if (c > 0) {
-            for (let r = h + 1; r < (end < 0 ? pb.v.length : end); r++) {
+            for (let r = h + 1; r < (end < 0 ? bt.v.length : end); r++) {
+              const pb = bt;
               const bill = String(pb.v[r][0] || "").trim(), amt = cellNum(pb, r, c); if (!bill || !(amt > 0)) continue;
-              const pot = /main/i.test(String(pb.v[r][1])) ? MAIN : potOf(line.label);
+              const pf = fc > 0 ? String(pb.v[r][fc] || "").trim() : "";
+              const pot = /^main/i.test(pf) ? MAIN : (findPot(pf) || potOf(line.label));
               if (skip(pot, k)) continue;
-              const due = whenDue(pb.d[r][2], pk.start);
+              const due = whenDue(pb.d[r][dc > 0 ? dc : 2], pk.start);
               if (due) { if (today < due) add(pot, bill, {amount: amt, kind: "due", note: "goes out " + nice(due)}); }
               else { const left = Math.max(0, dayDiff(today, pk.next)); const keep = amt * Math.min(1, left / tdays); if (keep > 0.004) add(pot, bill, {amount: keep, kind: "spread", note: "goes out bit by bit through the month"}); }
             }
@@ -1071,7 +1077,7 @@ footer{text-align:center}
           const via = viaOf(line.label);
           const key = line.label + suffix + (via ? " · until it goes to " + via.replace(/^send to /i, "") : "");
           if (/spend|keep/.test(w)) {
-            const sp = pi === 0 ? spent(ex, line.label, pk.start, pk.next) : 0;
+            const sp = pi === 0 ? spent(ex, line.label, pk.start, pk.next, true) : 0;
             if (amt > 0 || sp > 0) add(pot, key, {amount: amt - sp, budget: amt, spent: sp, kind: "spend"});
             if (k === idx && pi === 0) ex.filter(e => e.category === line.label && e.date >= iso(pk.start) && e.date < iso(pk.next)).forEach(e => {
               const payer = findPot(e.paidFrom);
@@ -1123,12 +1129,17 @@ footer{text-align:center}
       add(p.name, "Balance on your " + ledger.name + " tab", {amount: bal, kind: "ledger", note: "until " + nice(parseIso(ledger.last))});
       if (/whole/i.test(p.how)) { const sp = ex.filter(e => e.date >= ledger.first && findPot(e.paidFrom) === p.name).reduce((x, e) => x + num(e.amount), 0); if (sp > 0) add(p.name, "Spent since " + nice(parseIso(ledger.first)), {amount: -sp, kind: "ledger"}); }
       p.ledger = ledger;
-      if (/whole/i.test(p.how)) pots.forEach(q => {
-        if (q === p || String(q.actual).trim() === "" || q.actual === null || q.actual === undefined) return;
-        const a = num(q.actual); if (!a) return;
-        add(q.name, "Moved here from your main account", {amount: a, kind: "ledger", note: "your last check"});
-        add(p.name, "In " + q.name, {amount: -a, kind: "ledger"});
-      });
+      // before payday the whole account follows the plan tab; money for bills paid from a Space shows in that Space
+      if (/whole/i.test(p.how)) {
+        let left = bal; const upcoming = ledger.rows.filter(r => r.date > tIso);
+        for (const r of upcoming) {
+          if (r.inn > 0) break;
+          if (!(r.out > 0)) continue;
+          const pot = findPot(r.from) || p.name, amt = Math.min(r.out, Math.max(0, left));
+          left -= r.out;
+          if (pot !== p.name && amt > 0.004) { add(pot, r.what, {amount: amt, kind: "due", note: "goes out " + nice(parseIso(r.date))}); add(p.name, "Set aside in " + pot, {amount: -amt, kind: "ledger"}); }
+        }
+      }
     });
     const cur = m.periods[idx];
     const extras = m.moneyIn.filter(l => !/already in|^pay/i.test(l.label)).map(l => ({label: l.label, amount: cellNum(m.t, l.row, cur.col)})).filter(x => x.amount > 0);
@@ -1152,7 +1163,7 @@ footer{text-align:center}
     const pm = potModel(); const list = $("potList"); list.innerHTML = "";
     if (!pm) { $("potInfo").textContent = "Couldn't read the Budget tab."; return; }
     $("potTotal").textContent = fmt(pm.total);
-    $("potInfo").textContent = "Across your main account and pots on " + nice(pm.today) + ", if everything has gone to plan." + (pm.extras.length && pm.cur.name === "Now" && !pm.timing && !pm.lActive.some(p => /whole/i.test(p.how)) ? " This counts money that may not have arrived yet: " + pm.extras.map(x => x.label + " " + fmt(x.amount)).join(", ") + "." : "");
+    $("potInfo").textContent = "Across your main account and " + CONFIG.pots + " on " + nice(pm.today) + ", if everything has gone to plan." + (pm.extras.length && pm.cur.name === "Now" && !pm.timing && !pm.lActive.some(p => /whole/i.test(p.how)) ? " This counts money that may not have arrived yet: " + pm.extras.map(x => x.label + " " + fmt(x.amount)).join(", ") + "." : "");
     const tIso = iso(pm.today);
     const checked = pm.pots.filter(p => isIso(p.checked) && p.checked === tIso && p.actual !== "");
     const allToday = checked.length && checked.length === pm.pots.filter(p => p.editable).length;
@@ -1180,14 +1191,12 @@ footer{text-align:center}
       d.innerHTML = `<div class="row"><h3>${esc(p.name)}</h3><span class="num" style="font-size:1.25rem">${fmt(p.should)}</span></div>
         ${p.ledger ? `<p class="small muted">From your ${esc(p.ledger.name)} tab until ${nice(parseIso(p.ledger.last))}.</p>` : ""}
         <div class="act">${act || '<span class="small muted">Not checked yet</span>'}</div>
-        ${p.editable ? '<div class="btns"><button class="btn ghost" type="button" data-a="check" style="min-height:40px;padding:8px 14px">Enter what it has</button><button class="btn ghost" type="button" data-a="move" style="min-height:40px;padding:8px 14px">Move money here</button></div>' : ""}
+        ${p.editable ? '<div class="btns"><button class="btn ghost" type="button" data-a="check" style="min-height:40px;padding:8px 14px">Enter what it has</button></div>' : ""}
         ${parts.length ? `<details><summary>How it's worked out</summary><ul class="list small">${parts.map(x => `<li><span style="min-width:0">${esc(short(x.label))}<br><span class="muted">${x.kind === "spend" ? fmt(x.budget) + " budgeted" + (x.spent > 0 ? " − " + fmt(x.spent) + " spent" : "") : esc([...x.notes].join(", "))}</span></span><span class="num">${fmt(x.amount)}</span></li>`).join("")}</ul></details>` : '<p class="small muted">Nothing planned for this one right now.</p>'}`;
-      d.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => b.dataset.a === "move" ? openMove(pm, p.name) : openPotCheck(p, pm)));
+      d.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => openPotCheck(p, pm)));
       list.appendChild(d);
     });
     $("potHow").hidden = !pm.pots.some(p => p.editable);
-    $("moveBtn").hidden = pm.pots.filter(p => p.editable).length < 2;
-    $("moveBtn").onclick = () => openMove(pm, null);
   }
   // what each pot has now: today's check if there is one, otherwise what it should have
   const potNow = (p, tIso) => (isIso(p.checked) && p.checked === tIso && String(p.actual).trim() !== "") ? num(p.actual) : p.should;
@@ -1196,20 +1205,6 @@ footer{text-align:center}
     const rows = pm.pots.filter(p => p.editable || Math.abs(p.should) > 0.004);
     const total = rows.reduce((x, p) => x + potNow(p, tIso), 0);
     return `<div class="summ"><div class="row"><b>Total</b><span class="num">${fmt(total)}</span></div>${rows.map(p => `<div class="row small"><span>${esc(p.name)}</span><span class="num" style="font-weight:600">${fmt(potNow(p, tIso))}</span></div>`).join("")}</div>`;
-  }
-  function openMove(pm, toName) {
-    const ed = pm.pots.filter(p => p.editable); if (ed.length < 2) return;
-    const main = ed.find(p => /^main/i.test(p.name)) || ed[0];
-    const to = ed.find(p => p.name === toName && p !== main) || ed.find(p => p !== main);
-    edit = {move: true, pm}; $("dSave").textContent = "Move it";
-    $("dTitle").textContent = "Move money";
-    $("dWhere").textContent = "Move money between your pots, then do the same in your banking app. Both balances update here.";
-    const opts = sel => ed.map(p => `<option value="${p.row}"${p === sel ? " selected" : ""}>${esc(p.name)}</option>`).join("");
-    $("dField").innerHTML = `${potSummary(pm)}<div class="two"><div class="field"><label for="mvFrom">From</label><select id="mvFrom">${opts(main)}</select></div><div class="field"><label for="mvTo">To</label><select id="mvTo">${opts(to)}</select></div></div><div class="field"><label for="dIn">Amount (£)</label><input id="dIn" class="amount" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00"></div>`;
-    $("dStatus").textContent = st.cfg ? "" : "Connect to your sheet first.";
-    $("dSave").disabled = !st.cfg;
-    $("dlg").showModal();
-    setTimeout(() => { const i = $("dIn"); if (i) i.focus(); }, 50);
   }
   function openPotCheck(p, pm) {
     edit = {pot: p.row};
@@ -1314,19 +1309,6 @@ footer{text-align:center}
   $("dForm").addEventListener("submit", async ev => {
     ev.preventDefault(); if (!edit) { $("dlg").close(); return; }
     const i = $("dIn"); let value;
-    if (edit.move) {
-      const amt = Number(i.value), fr = Number($("mvFrom").value), tr = Number($("mvTo").value);
-      if (!(amt > 0)) { $("dStatus").textContent = "Type how much you're moving."; return; }
-      if (fr === tr) { $("dStatus").textContent = "Pick two different pots."; return; }
-      const tIso = iso(new Date()), pf = edit.pm.pots.find(p => p.row === fr), pt2 = edit.pm.pots.find(p => p.row === tr);
-      const nf = round2(potNow(pf, tIso) - amt), nt = round2(potNow(pt2, tIso) + amt);
-      $("dSave").disabled = true; $("dStatus").textContent = "Saving to the sheet…";
-      try {
-        for (const [row, val] of [[fr, nf], [tr, nt]]) { await call({action: "set", tab: "Pot check", row, col: 1, type: "number", value: val}); await call({action: "set", tab: "Pot check", row, col: 2, type: "date", value: tIso}); }
-        $("dlg").close(); render();
-      } catch (e) { $("dStatus").textContent = e.code === "offline" ? "You're offline. Moving money needs a connection." : e.message; }
-      $("dSave").disabled = false; return;
-    }
     if (edit.pot !== undefined) {
       if (i.value === "") { $("dStatus").textContent = "Type the balance first."; return; }
       $("dSave").disabled = true; $("dStatus").textContent = "Saving to the sheet…";
@@ -1396,6 +1378,11 @@ footer{text-align:center}
 
   document.title = CONFIG.name.replace(/^./, c => c.toUpperCase()).replace(" money", " Money");
   document.querySelector("header h1").textContent = CONFIG.name;
+  $("aSharedLab").textContent = "Split with " + CONFIG.partner + " (half comes out of each budget)";
+  const cap = w => w.replace(/^./, c => c.toUpperCase());
+  document.querySelectorAll(".w-Pots").forEach(e => { e.textContent = cap(CONFIG.pots); });
+  document.querySelectorAll(".w-Pot").forEach(e => { e.textContent = cap(CONFIG.pot); });
+  document.querySelectorAll(".w-pot").forEach(e => { e.textContent = CONFIG.pot; });
   // tab bar: when it sticks to the top, paint the camera/notch strip above it so nothing scrolls through behind it
   (() => {
     const nav = document.querySelector("nav.tabs");
