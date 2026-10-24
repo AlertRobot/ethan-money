@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ethan's Money</title>
+<meta name="description" content="Ethan's budget on the go: log payments, see what's left, and sort pots on payday. Syncs with the E&S Budgie sheet.">
+<meta name="theme-color" content="#2E5E8C">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Money">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<style>
+/* Layout: phone-width column, sticky four-tab bar (Today, Add, Payday, Sheet). Summary numbers first, detail below. */
+:root{
+  --bg:#F3F5F8; --card:#FFFFFF; --ink:#1B2533; --muted:#5B6878; --line:#DDE3EA;
+  --accent:#2E5E8C; --accent-ink:#FFFFFF; --accent-soft:#E3ECF5;
+  --good:#2F7D5B; --good-soft:#E1F2EA; --bad:#B23B3B; --bad-soft:#F7E3E3; --warn:#9A6100; --warn-soft:#FBF0DA;
+  --input:#0B57D0; --input-soft:#E6EEFC;
+  --display:ui-rounded, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --body:system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10151C; --card:#18202A; --ink:#E6ECF3; --muted:#9AA8B8; --line:#2A3542;
+  --accent:#7FB0E0; --accent-ink:#0C1724; --accent-soft:#1E2D3D;
+  --good:#6FCB9F; --good-soft:#18322A; --bad:#F08A8A; --bad-soft:#3A2222; --warn:#E9B65C; --warn-soft:#3A2E18;
+  --input:#8AB4F8; --input-soft:#1C2A40; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10151C; --card:#18202A; --ink:#E6ECF3; --muted:#9AA8B8; --line:#2A3542;
+  --accent:#7FB0E0; --accent-ink:#0C1724; --accent-soft:#1E2D3D;
+  --good:#6FCB9F; --good-soft:#18322A; --bad:#F08A8A; --bad-soft:#3A2222; --warn:#E9B65C; --warn-soft:#3A2E18;
+  --input:#8AB4F8; --input-soft:#1C2A40; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45;margin:0}
+.wrap{max-width:640px;margin:0 auto;padding-top:calc(env(safe-area-inset-top,0px) + 14px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 56px);padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));display:grid;gap:14px}
+h1,h2,h3{font-family:var(--display);margin:0;letter-spacing:-0.01em;text-wrap:balance}
+h1{font-size:1.6rem;line-height:1.1}
+h2{font-size:1.15rem}
+h3{font-size:1rem}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:.87rem}
+.num{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:12px;min-width:0}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.sync{font:inherit;font-size:.85rem;border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;padding:6px 12px;cursor:pointer;min-height:36px;white-space:nowrap}
+.sync.warn{color:var(--warn);border-color:var(--warn)}
+.sync.bad{color:var(--bad);border-color:var(--bad)}
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-block:8px;padding-top:calc(env(safe-area-inset-top,0px) + 6px);margin-top:calc(-1 * env(safe-area-inset-top,0px))}
+.tabs button{font:inherit;font-weight:700;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:12px 2px;cursor:pointer;min-height:46px}
+.tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.big{font-family:var(--display);font-size:1.9rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{background:var(--accent-soft);border-radius:12px;padding:12px;display:grid;gap:3px;min-width:0;border:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.tile.over{background:var(--bad-soft)}
+.tile.warn{background:var(--warn-soft)}
+.tile .big{font-size:1.4rem}
+.tile .lbl{font-weight:700;font-size:.9rem;overflow-wrap:anywhere}
+.bar{height:7px;background:var(--line);border-radius:999px;overflow:hidden;position:relative}
+.bar span{display:block;height:100%;width:0;background:var(--accent)}
+.bar.over span{background:var(--bad)}
+.bar i{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);opacity:.55}
+.note{background:var(--warn-soft);border-radius:10px;padding:10px 12px;font-size:.93rem}
+.note.ok{background:var(--good-soft)}
+.note.bad{background:var(--bad-soft)}
+.list{list-style:none;margin:0;padding:0;display:grid}
+.list li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.list li:first-child{border-top:0}
+.list li.chk{grid-template-columns:auto 1fr auto}
+.list input[type=checkbox]{width:26px;height:26px;accent-color:var(--accent);margin:0}
+.what{font-weight:700;overflow-wrap:anywhere}
+.done .what{text-decoration:line-through;color:var(--muted)}
+form,.form{display:grid;gap:10px}
+.field{display:grid;gap:4px;min-width:0}
+.field label,.lab{font-weight:700;font-size:.9rem}
+input[type=text],input[type=number],input[type=date],input[type=url],input[type=password],select,textarea{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0;min-height:46px}
+.amount{font-size:1.6rem !important;font-weight:700;font-variant-numeric:tabular-nums}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{font:inherit;font-weight:700;border-radius:999px;padding:11px 18px;cursor:pointer;border:1.5px solid var(--accent);background:var(--accent);color:var(--accent-ink);justify-self:start;min-height:46px}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.danger{background:transparent;color:var(--bad);border-color:var(--bad)}
+.btn.wide{justify-self:stretch}
+.btn:disabled{opacity:.5;cursor:default}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:inherit;font-size:.88rem;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 12px;cursor:pointer;min-height:38px}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.iconbtn{font:inherit;background:transparent;border:0;color:var(--muted);cursor:pointer;padding:8px 10px;border-radius:8px;min-width:40px;min-height:40px}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.status{font-size:.9rem;color:var(--muted);min-height:1.2em}
+.pot{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--line)}
+.pot:first-child{border-top:0}
+.pot .head{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+.pot .parts{padding-left:38px;display:grid;gap:2px}
+.pot .parts div{display:flex;justify-content:space-between;gap:10px}
+.sheetwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table.sheet{border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums;font-size:.9rem;min-width:100%}
+table.sheet td{padding:7px 9px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top;text-align:right}
+table.sheet td:first-child{position:sticky;left:0;background:var(--card);text-align:left;white-space:normal;min-width:150px;max-width:220px;font-weight:600;z-index:1;border-right:1px solid var(--line)}
+table.sheet tr.hdr td{font-weight:700;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+table.sheet tr.sec td{font-family:var(--display);font-weight:700;font-size:1rem;color:var(--ink);background:var(--bg)}
+table.sheet tr.sec td:first-child{background:var(--bg)}
+table.sheet tr.tot td{font-weight:700;border-top:2px solid var(--ink)}
+table.sheet td.txt{text-align:left;white-space:normal;min-width:140px;max-width:260px;color:var(--muted);font-size:.84rem}
+table.sheet td.in{padding:2px 3px}
+table.sheet td.in button{font:inherit;width:100%;text-align:inherit;border:1px solid var(--input);background:var(--input-soft);color:var(--input);border-radius:8px;padding:5px 7px;cursor:pointer;font-weight:700;min-height:34px;min-width:64px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.sw{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:5px;border:1px solid var(--input);background:var(--input-soft)}
+.sheettext{display:grid;gap:4px}
+dialog{border:0;border-radius:16px;padding:0;max-width:min(520px,calc(100vw - 24px));width:100%;background:var(--card);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog .inner{padding:18px;display:grid;gap:12px}
+.tablewrap{overflow-x:auto}
+table.imp{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:.9rem}
+table.imp td,table.imp th{text-align:left;padding:6px 5px;border-top:1px solid var(--line);vertical-align:middle}
+table.imp th{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-top:0}
+table.imp td.amt{text-align:right;white-space:nowrap}
+table.imp select{min-height:38px;padding:6px 8px;font-size:15px}
+footer{text-align:center}
+@media (max-width:370px){.tiles,.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Ethan's money</h1>
+    <button class="sync" type="button" id="syncBtn" aria-live="polite">…</button>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-today" aria-selected="true" aria-controls="p-today">Today</button>
+    <button role="tab" id="tab-add" aria-selected="false" aria-controls="p-add">Add</button>
+    <button role="tab" id="tab-pay" aria-selected="false" aria-controls="p-pay">Payday</button>
+    <button role="tab" id="tab-sheet" aria-selected="false" aria-controls="p-sheet">Sheet</button>
+  </nav>
+
+  <p class="note bad" id="errBar" hidden></p>
+
+  <!-- CONNECT -->
+  <section class="card" id="connectCard" hidden>
+    <h2>Connect to your sheet</h2>
+    <p class="small muted">Open the connect link from Apps Script on this phone, or paste the Web app URL and app key here.</p>
+    <form id="connForm">
+      <div class="field"><label for="cUrl">Web app URL (ends in /exec)</label><input id="cUrl" type="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec"></div>
+      <div class="field"><label for="cKey">App key</label><input id="cKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      <button class="btn" type="submit" id="cBtn">Connect</button>
+      <p class="status" id="cStatus" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <!-- TODAY -->
+  <section id="p-today" role="tabpanel" aria-labelledby="tab-today" style="display:grid;gap:14px">
+    <div class="card" id="periodCard">
+      <div class="row"><h2 id="pName">This pay period</h2><span class="big" id="pDays">–</span></div>
+      <p class="muted" id="pInfo">Loading…</p>
+      <p class="note" id="pWarn" hidden></p>
+    </div>
+
+    <div class="card">
+      <div class="row"><h2>Left to spend</h2><span class="num" id="flexLeft">–</span></div>
+      <p class="small muted" id="flexInfo"></p>
+      <div class="tiles" id="tiles"></div>
+      <p class="small muted">The dark mark on each bar is where you'd be on an even pace. Tap a line to see where to change its budget.</p>
+    </div>
+
+    <div class="card">
+      <h2>Bills and set-asides this period</h2>
+      <ul class="list" id="fixedList"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Trends</h2>
+      <ul class="list" id="trendList"></ul>
+      <p class="small muted" id="trendNote"></p>
+    </div>
+
+    <div class="card">
+      <h2>At a glance</h2>
+      <ul class="list" id="glance"></ul>
+    </div>
+  </section>
+
+  <!-- ADD -->
+  <section id="p-add" role="tabpanel" aria-labelledby="tab-add" hidden style="display:grid;gap:14px">
+    <div class="card">
+      <h2>Log a payment</h2>
+      <form id="addForm">
+        <div class="field"><label for="aAmount">Amount (£)</label><input id="aAmount" class="amount" type="number" inputmode="decimal" step="0.01" min="0.01" required placeholder="0.00"></div>
+        <div class="field"><label for="aDesc">What was it?</label><input id="aDesc" type="text" required maxlength="120" placeholder="Tesco, fuel, cinema…" autocomplete="off"></div>
+        <div class="field"><span class="lab" id="catLab">Category</span><div class="chips" id="catChips" role="group" aria-labelledby="catLab"></div></div>
+        <div class="two">
+          <div class="field"><label for="aFrom">Paid from</label><select id="aFrom"></select></div>
+          <div class="field"><label for="aDate">Date</label><input id="aDate" type="date" required></div>
+        </div>
+        <div class="field"><label for="aNotes">Notes (optional)</label><input id="aNotes" type="text" maxlength="200" autocomplete="off"></div>
+        <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="aShared" style="width:24px;height:24px;accent-color:var(--accent)"> Shared with Sophie (she owes half)</label>
+        <button class="btn wide" type="submit" id="aBtn">Add payment</button>
+        <p class="status" id="aStatus" aria-live="polite"></p>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Import from Monzo</h2>
+      <p class="small muted">In the Monzo app: Account, then Statements and exports, then export as CSV. Choose the file here. Pot moves and money coming in are skipped, and payments already in the sheet are left out.</p>
+      <div class="field"><label for="csv">Monzo export (.csv)</label><input id="csv" type="file"></div>
+      <div id="impBox" hidden style="display:grid;gap:10px">
+        <p class="small" id="impInfo"></p>
+        <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="impOld" style="width:22px;height:22px;accent-color:var(--accent)"> Include payments from before the plan started (used for trends only)</label>
+        <div class="tablewrap"><table class="imp"><thead><tr><th>Add</th><th>Date</th><th>What</th><th style="text-align:right">£</th><th>Category</th></tr></thead><tbody id="impRows"></tbody></table></div>
+        <button class="btn" type="button" id="impBtn">Add ticked payments</button>
+      </div>
+      <p class="status" id="impStatus" aria-live="polite"></p>
+    </div>
+
+    <div class="card">
+      <h2>Recent payments</h2>
+      <ul class="list" id="recent"></ul>
+    </div>
+  </section>
+
+  <!-- PAYDAY -->
+  <section id="p-pay" role="tabpanel" aria-labelledby="tab-pay" hidden style="display:grid;gap:14px">
+    <div class="card">
+      <h2>Pot sorter</h2>
+      <div class="chips" id="payChips" role="group" aria-label="Pay period"></div>
+      <div class="row"><span class="muted" id="payIn"></span><span class="big" id="payTotal">–</span></div>
+      <div class="bar" aria-hidden="true"><span id="payBar"></span></div>
+      <p class="small muted" id="payDone"></p>
+      <div id="pots"></div>
+      <p class="small muted">Amounts come from that column of the Budget tab. Which pot each line goes to is set on the App settings tab, which you can change in the Sheet section.</p>
+    </div>
+  </section>
+
+  <!-- SHEET -->
+  <section id="p-sheet" role="tabpanel" aria-labelledby="tab-sheet" hidden style="display:grid;gap:14px">
+    <div class="card">
+      <div class="chips" id="tabChips" role="group" aria-label="Sheet tabs"></div>
+      <div class="legend small muted"><span><span class="sw"></span>Your inputs: tap to change</span><span>Everything else is worked out by the sheet</span></div>
+    </div>
+    <div id="sheetView" style="display:grid;gap:10px"></div>
+    <div class="card">
+      <h2>Connection</h2>
+      <p class="small muted" id="connInfo"></p>
+      <div class="btns"><button class="btn ghost" type="button" id="refreshBtn">Refresh now</button><button class="btn danger" type="button" id="disconnectBtn">Disconnect</button></div>
+    </div>
+  </section>
+
+  <footer class="muted small" id="foot"></footer>
+</div>
+
+<dialog id="dlg" aria-labelledby="dTitle">
+  <form method="dialog" class="inner" id="dForm">
+    <h2 id="dTitle">Change</h2>
+    <p class="small muted" id="dWhere"></p>
+    <div id="dField"></div>
+    <p class="status" id="dStatus" aria-live="polite"></p>
+    <div class="btns"><button class="btn" type="submit" id="dSave" value="save">Save to sheet</button><button class="btn ghost" type="button" id="dCancel">Cancel</button></div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  "use strict";
+  const APP_VERSION = "1.0.0";
+  const KEY = "ethanMoney.v1";
+  const $ = id => document.getElementById(id);
+  const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const fmt0 = n => (n < -0.5 ? "-£" : "£") + Math.round(Math.abs(n)).toLocaleString("en-GB");
+  const iso = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const isIso = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+  const parseIso = s => { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+  const nice = d => d.toLocaleDateString("en-GB", {weekday: "short", day: "numeric", month: "short"});
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const num = v => typeof v === "number" ? v : (v === "" || v === null || v === undefined ? 0 : (Number(String(v).replace(/[£,\s]/g, "")) || 0));
+  const round2 = n => Math.round(Number(n) * 100) / 100;
+  const todayDate = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
+  const dayDiff = (a, b) => Math.round((b - a) / 86400000);
+  const FLEX_RE = /food|fuel|entertain|gift|household|christmas/i;
+  const PACE_RE = /food|entertain/i; // steady day-to-day spending; fuel and one-offs come in lumps, so no pace forecast
+
+  // ---------- local state ----------
+  function load() {
+    try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && typeof s === "object") return Object.assign({cfg: null, snap: null, queue: [], ticks: {}, lastSync: 0}, s); } catch (e) {}
+    return {cfg: null, snap: null, queue: [], ticks: {}, lastSync: 0};
+  }
+  let st = load();
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { showErr("This phone isn't letting the app save. Open it from the home screen icon."); } }
+  function showErr(msg) { $("errBar").textContent = msg; $("errBar").hidden = !msg; }
+
+  // connect link: #connect=<base64 JSON {u,k}>
+  (function readHash() {
+    const m = location.hash.match(/connect=([A-Za-z0-9_\-+/=]+)/);
+    if (!m) return;
+    try {
+      const b = m[1].replace(/-/g, "+").replace(/_/g, "/");
+      const o = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0))));
+      if (o && /^https:\/\/script\.google(usercontent)?\.com\//.test(o.u) && o.k) { st.cfg = {url: o.u, key: o.k}; save(); }
+    } catch (e) {}
+    history.replaceState(null, "", location.pathname + location.search);
+  })();
+
+  // ---------- talking to the sheet ----------
+  let busy = false;
+  async function call(body) {
+    if (!st.cfg) throw Object.assign(new Error("Not connected"), {code: "nocfg"});
+    let res;
+    try {
+      res = await fetch(st.cfg.url, {method: "POST", headers: {"Content-Type": "text/plain;charset=utf-8"}, body: JSON.stringify(Object.assign({key: st.cfg.key}, body)), redirect: "follow", cache: "no-store"});
+    } catch (e) { throw Object.assign(new Error("No connection"), {code: "offline"}); }
+    let out;
+    try { out = await res.json(); } catch (e) { throw Object.assign(new Error("The sheet didn't answer properly. Check the Web app is deployed with access set to Anyone."), {code: "bad"}); }
+    if (!out.ok) throw Object.assign(new Error(out.error || "The sheet said no"), {code: "server"});
+    if (out.data) { st.snap = out.data; st.lastSync = Date.now(); save(); }
+    return out;
+  }
+  async function sync(quiet) {
+    if (!st.cfg || busy) return;
+    busy = true; setSync("Syncing…", "");
+    try {
+      const adds = st.queue.filter(q => q.type === "add").map(q => q.expense);
+      if (adds.length) await call({action: "add", expenses: adds});
+      st.queue = st.queue.filter(q => q.type !== "add");
+      const dels = st.queue.filter(q => q.type === "delete");
+      for (const d of dels) {
+        try { await call({action: "delete", id: d.id, row: d.row, amount: d.amount, desc: d.desc}); }
+        catch (e) { if (e.code !== "server") throw e; }
+        st.queue = st.queue.filter(q => q !== d);
+      }
+      save();
+      if (!adds.length && !dels.length) await call({action: "snapshot"});
+      showErr("");
+    } catch (e) {
+      if (e.code === "offline") { if (!quiet) showErr(""); }
+      else showErr(e.message);
+    }
+    busy = false; render();
+  }
+  function setSync(text, cls) { const b = $("syncBtn"); b.textContent = text; b.className = "sync" + (cls ? " " + cls : ""); }
+  function syncLabel() {
+    if (!st.cfg) return setSync("Not connected", "bad");
+    if (st.queue.length) return setSync(st.queue.length + " waiting to sync", "warn");
+    if (!st.lastSync) return setSync("Not synced yet", "warn");
+    const mins = Math.round((Date.now() - st.lastSync) / 60000);
+    setSync(mins < 1 ? "Synced just now" : mins < 60 ? "Synced " + mins + " min ago" : "Synced " + new Date(st.lastSync).toLocaleString("en-GB", {day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"}), mins > 720 ? "warn" : "");
+  }
+
+  // ---------- reading the snapshot ----------
+  const tab = name => st.snap?.tabs?.[name] || null;
+  function findRow(t, label, from = 0) { if (!t) return -1; for (let r = from; r < t.v.length; r++) if (String(t.v[r][0]).trim() === label) return r; return -1; }
+  function findRowStarts(t, prefix, from = 0) { if (!t) return -1; for (let r = from; r < t.v.length; r++) if (String(t.v[r][0]).trim().startsWith(prefix)) return r; return -1; }
+  function budgetModel() {
+    const t = tab("Budget"); if (!t) return null;
+    const pr = findRow(t, "Pay period"), sr = findRow(t, "Starts"), nr = findRow(t, "Next payday");
+    if (pr < 0 || sr < 0 || nr < 0) return null;
+    const periods = [];
+    for (let c = 1; c < t.v[pr].length; c++) {
+      const name = String(t.v[pr][c] || "").trim(); if (!name) continue;
+      const s = t.v[sr][c], n = t.v[nr][c];
+      if (!isIso(s) || !isIso(n)) continue;
+      periods.push({name, col: c, start: parseIso(s), next: parseIso(n)});
+    }
+    const section = (startLabel, endPrefix) => {
+      const a = findRow(t, startLabel); if (a < 0) return [];
+      const b = findRowStarts(t, endPrefix, a + 1);
+      const out = [];
+      for (let r = a + 1; r < (b < 0 ? t.v.length : b); r++) { const l = String(t.v[r][0] || "").trim(); if (l) out.push({label: l, row: r}); }
+      return out;
+    };
+    return {t, periods, moneyIn: section("Money in", "Total in"), spending: section("Spending", "Total spending"), saving: section("Savings and repayments", "Total saved"), totalInRow: findRowStarts(t, "Total in")};
+  }
+  const cellNum = (t, r, c) => (t && r >= 0 && t.v[r]) ? num(t.v[r][c]) : 0;
+  function currentPeriod(m) {
+    const today = todayDate();
+    let idx = -1;
+    m.periods.forEach((p, i) => { if (p.start <= today && today < p.next) idx = i; });
+    let note = "";
+    if (idx < 0 && m.periods.length) {
+      if (today < m.periods[0].start) { idx = 0; note = "Your plan starts on " + nice(m.periods[0].start) + "."; }
+      else { idx = m.periods.length - 1; note = "Today is past the last pay period in the Budget tab. Add the next month's column to keep tracking."; }
+    }
+    return {idx, note, today};
+  }
+  function allExpenses() {
+    const list = (st.snap?.expenses || []).map(e => Object.assign({}, e, {pending: false}));
+    const pendingDel = new Set(st.queue.filter(q => q.type === "delete").map(q => q.id || ("row" + q.row)));
+    const kept = list.filter(e => !pendingDel.has(e.id || ("row" + e.row)));
+    st.queue.filter(q => q.type === "add").forEach(q => kept.push(Object.assign({}, q.expense, {pending: true})));
+    return kept.filter(e => isIso(e.date)).sort((a, b) => b.date.localeCompare(a.date) || (b.row || 1e9) - (a.row || 1e9));
+  }
+  function spent(list, cat, from, to) { const f = iso(from), t = iso(to); return list.filter(e => e.category === cat && e.date >= f && e.date < t).reduce((s, e) => s + num(e.amount), 0); }
+
+  // ---------- render ----------
+  function render() {
+    syncLabel();
+    $("foot").textContent = "Version " + APP_VERSION + " · The Google Sheet is the master copy";
+    $("connectCard").hidden = !!st.cfg;
+    $("connInfo").textContent = st.cfg ? "Connected to your Apps Script web app." + (st.lastSync ? " Last synced " + new Date(st.lastSync).toLocaleString("en-GB") + "." : "") + (st.queue.length ? " " + st.queue.length + " change(s) waiting." : "") : "Not connected.";
+    if (!st.snap) { $("pInfo").textContent = st.cfg ? "Loading your sheet…" : "Connect to your sheet to begin."; renderAddForm(); return; }
+    renderToday(); renderAddForm(); renderRecent(); renderPay(); renderSheet();
+  }
+
+  function renderToday() {
+    const m = budgetModel(); if (!m || !m.periods.length) { $("pInfo").textContent = "Couldn't find the pay periods on the Budget tab."; return; }
+    const {idx, note, today} = currentPeriod(m); const p = m.periods[idx];
+    const daysLeft = Math.max(0, dayDiff(today, p.next));
+    const totalDays = Math.max(1, dayDiff(p.start, p.next));
+    const elapsed = Math.min(totalDays, Math.max(1, dayDiff(p.start, today) + 1));
+    $("pName").textContent = p.name === "Now" ? "Until payday" : p.name + " pay period";
+    $("pDays").textContent = daysLeft === 1 ? "1 day" : daysLeft + " days";
+    $("pInfo").textContent = nice(p.start) + " to " + nice(new Date(p.next.getFullYear(), p.next.getMonth(), p.next.getDate() - 1)) + " · next payday " + nice(p.next);
+    $("pWarn").textContent = note; $("pWarn").hidden = !note;
+
+    const ex = allExpenses();
+    const tiles = $("tiles"); tiles.innerHTML = "";
+    let flexLeft = 0, flexBudget = 0;
+    const fixed = $("fixedList"); fixed.innerHTML = "";
+    m.spending.forEach(line => {
+      const budget = cellNum(m.t, line.row, p.col);
+      const sp = spent(ex, line.label, p.start, p.next);
+      const left = budget - sp;
+      if (FLEX_RE.test(line.label)) {
+        if (!(budget > 0) && !(sp > 0)) return;
+        flexLeft += left; flexBudget += budget;
+        const perDay = daysLeft > 0 ? left / daysLeft : left;
+        const remainingAfterToday = Math.max(0, daysLeft - 1);
+        const pace = sp / elapsed;
+        const projected = sp + pace * remainingAfterToday;
+        const early = (elapsed < 4 && totalDays > 10) || !PACE_RE.test(line.label);
+        const expected = budget * elapsed / totalDays;
+        const cls = left < 0 ? " over" : (!early && projected > budget * 1.05 && budget > 0 ? " warn" : "");
+        const pct = budget > 0 ? Math.min(100, sp / budget * 100) : (sp > 0 ? 100 : 0);
+        const mark = budget > 0 ? Math.min(100, expected / budget * 100) : 0;
+        let trend = "";
+        if (left < 0) trend = "Over by " + fmt(-left);
+        else if (!PACE_RE.test(line.label) && !/fuel/i.test(line.label)) trend = left <= 0.004 ? "All used" : fmt(left) + " left";
+        else if (early) trend = budget > 0 ? (daysLeft > 0 ? fmt(perDay) + " a day left" : fmt(left) + " left") : "No budget this period";
+        else if (budget > 0 && projected > budget * 1.05) trend = "At this pace ~" + fmt0(projected) + ", over by " + fmt0(projected - budget);
+        else trend = fmt(perDay) + " a day · on track";
+        const b = document.createElement("button"); b.type = "button"; b.className = "tile" + cls;
+        b.innerHTML = `<span class="lbl">${esc(short(line.label))}</span><span class="big">${fmt(left)}</span><div class="bar${left < 0 ? " over" : ""}"><span style="width:${pct}%"></span>${budget > 0 ? `<i style="left:${mark}%"></i>` : ""}</div><span class="small muted">${fmt(sp)} of ${fmt(budget)}</span><span class="small">${esc(trend)}</span>`;
+        b.addEventListener("click", () => openBudgetCell(m, line, p));
+        tiles.appendChild(b);
+      } else {
+        if (!(budget > 0) && !(sp > 0)) return;
+        const li = document.createElement("li");
+        li.innerHTML = `<span><span class="what">${esc(line.label)}</span><br><span class="small muted">${sp > 0 ? fmt(sp) + " logged" : "Set aside on payday"}</span></span><button class="iconbtn num" type="button" style="color:var(--ink)">${fmt(budget)}</button>`;
+        li.querySelector("button").addEventListener("click", () => openBudgetCell(m, line, p));
+        fixed.appendChild(li);
+      }
+    });
+    m.saving.forEach(line => {
+      const v = cellNum(m.t, line.row, p.col); if (!(v > 0)) return;
+      const li = document.createElement("li");
+      li.innerHTML = `<span><span class="what">${esc(line.label)}</span><br><span class="small muted">Saving or repayment</span></span><span class="num">${fmt(v)}</span>`;
+      fixed.appendChild(li);
+    });
+    if (!tiles.children.length) tiles.innerHTML = '<p class="small muted">No spending budgets in this period.</p>';
+    if (!fixed.children.length) fixed.innerHTML = '<li><span class="muted">Nothing set aside this period.</span><span></span></li>';
+    $("flexLeft").textContent = fmt(flexLeft); $("flexLeft").style.color = flexLeft < 0 ? "var(--bad)" : "";
+    $("flexInfo").textContent = daysLeft > 0 ? "About " + fmt(flexLeft / daysLeft) + " a day across food, fuel and spending until payday." : "Payday is today.";
+
+    renderTrends(m, ex, idx);
+    renderGlance();
+  }
+  const short = s => String(s).replace(" & groceries", "").replace("Entertainment & spending", "Entertainment").replace("Household one-offs", "Household").replace("Gifts & birthdays", "Gifts");
+
+  function renderTrends(m, ex, idx) {
+    const ul = $("trendList"); ul.innerHTML = "";
+    const cur = m.periods[idx];
+    const cats = m.spending.map(l => l.label).filter(l => FLEX_RE.test(l));
+    const done = m.periods.filter(p => p.next <= todayDate());
+    const before = ex.filter(e => e.date < iso(cur.start));
+    let earliest = before.length ? parseIso(before[before.length - 1].date) : null;
+    const histDays = earliest ? dayDiff(earliest, cur.start) : 0;
+    let shown = 0;
+    cats.forEach(cat => {
+      const last = done.length ? done[done.length - 1] : null;
+      const lastSp = last ? spent(ex, cat, last.start, last.next) : null;
+      const histSp = histDays >= 14 ? spent(ex, cat, earliest, cur.start) : null;
+      const per30 = histSp !== null ? histSp / histDays * 30 : null;
+      const budgetNext = idx + 1 < m.periods.length ? cellNum(m.t, m.spending.find(l => l.label === cat).row, m.periods[idx + 1].col) : null;
+      if ((lastSp === null || lastSp < 0.5) && (per30 === null || per30 < 0.5)) return;
+      const parts = [];
+      if (lastSp !== null) parts.push((last.name === "Now" ? "Last period (" + dayDiff(last.start, last.next) + " days) " : last.name + " pay month ") + fmt0(lastSp));
+      if (per30 !== null) parts.push("usually ~" + fmt0(per30) + " a month");
+      const li = document.createElement("li");
+      let flag = "";
+      if (per30 !== null && budgetNext !== null && budgetNext > 0) flag = per30 > budgetNext * 1.1 ? `<span class="small" style="color:var(--bad)">More than next month's ${fmt0(budgetNext)} budget</span>` : `<span class="small" style="color:var(--good)">Fits next month's ${fmt0(budgetNext)}</span>`;
+      li.innerHTML = `<span><span class="what">${esc(short(cat))}</span><br><span class="small muted">${esc(parts.join(" · "))}</span>${flag ? "<br>" + flag : ""}</span><span></span>`;
+      ul.appendChild(li); shown++;
+    });
+    $("trendNote").textContent = shown ? (histDays >= 14 ? "Based on " + histDays + " days of logged payments before this pay period." : "") : "Trends show once you've logged a full pay month, or imported older Monzo payments (Add tab, tick 'Include payments from before the plan').";
+  }
+
+  function renderGlance() {
+    const ul = $("glance"); ul.innerHTML = "";
+    const add = (label, value, sub) => { const li = document.createElement("li"); li.innerHTML = `<span><span class="what">${esc(label)}</span>${sub ? `<br><span class="small muted">${esc(sub)}</span>` : ""}</span><span class="num">${esc(value)}</span>`; ul.appendChild(li); };
+    const tm = tab("This month");
+    const pick = (t, label) => { const r = findRow(t, label); return r >= 0 ? (t.d[r][1] || "") : null; };
+    const s = pick(tm, "Sophie still owes"); if (s !== null) add("Sophie still owes you", s, "Sophie tab");
+    const c = pick(tm, "Christmas left to spend"); if (c !== null) add("Christmas left to spend", c, "Christmas tab");
+    const cc = tab("Car costs");
+    const av = pick(cc, "Available for the new car"); if (av !== null) add("New car fund by February", av, "Car costs tab");
+    const sf = pick(cc, "Still to find"); if (sf !== null) add("Still to find for the car", sf);
+    const sg = tab("Savings growth");
+    if (sg) { const h = sg.v.findIndex(r => String(r[0]) === "Month"); if (h >= 0 && sg.v[h + 1]) { const tc = sg.v[h].findIndex(x => String(x).startsWith("Total")); if (tc > 0) add("Total savings by end of " + sg.d[h + 1][0], sg.d[h + 1][tc], "LISA (mid estimate) plus cash ISA"); } }
+    if (!ul.children.length) ul.innerHTML = '<li><span class="muted">Nothing to show yet.</span><span></span></li>';
+  }
+
+  // ---------- add ----------
+  let selCat = "";
+  function renderAddForm() {
+    const cats = st.snap?.categories || ["Food & groceries", "Car fuel", "Entertainment & spending", "Household one-offs"];
+    const order = c => (FLEX_RE.test(c) ? 0 : 1);
+    const sorted = [...cats].sort((a, b) => order(a) - order(b));
+    if (!selCat || !cats.includes(selCat)) selCat = cats.find(c => /food/i.test(c)) || cats[0];
+    const box = $("catChips"); box.innerHTML = "";
+    sorted.forEach(c => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = short(c); b.title = c; b.setAttribute("aria-pressed", String(c === selCat)); b.addEventListener("click", () => { selCat = c; renderAddForm(); }); box.appendChild(b); });
+    const from = $("aFrom"); const keep = from.value; from.innerHTML = "";
+    (st.snap?.paidFrom || ["Main account", "Bills pot", "Flex pot", "Flex", "Cash"]).forEach(x => { const o = document.createElement("option"); o.value = x; o.textContent = x; from.appendChild(o); });
+    if (keep) from.value = keep;
+    if (!$("aDate").value) $("aDate").value = iso(new Date());
+  }
+  function newId() { return "app-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7); }
+  $("addForm").addEventListener("submit", ev => {
+    ev.preventDefault();
+    const amount = round2($("aAmount").value);
+    if (!(amount > 0)) { $("aStatus").textContent = "Enter an amount."; return; }
+    const exp = {id: newId(), date: $("aDate").value || iso(new Date()), desc: $("aDesc").value.trim() || "Payment", category: selCat, amount, paidFrom: $("aFrom").value || "Main account", notes: $("aNotes").value.trim(), shared: $("aShared").checked};
+    st.queue.push({type: "add", expense: exp}); save();
+    $("aStatus").textContent = "Added " + fmt(amount) + " to " + short(selCat) + (navigator.onLine ? ". Saving to the sheet…" : ". It'll save to the sheet when you're back online.");
+    $("aAmount").value = ""; $("aDesc").value = ""; $("aNotes").value = ""; $("aShared").checked = false; $("aDate").value = iso(new Date());
+    render(); sync(true).then(() => { if (!st.queue.some(q => q.expense && q.expense.id === exp.id)) $("aStatus").textContent = "Added " + fmt(amount) + " to " + short(selCat) + ". Saved to the sheet."; });
+  });
+  function renderRecent() {
+    const ul = $("recent"); ul.innerHTML = "";
+    allExpenses().slice(0, 30).forEach(e => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span style="min-width:0"><span class="what">${esc(e.desc)}</span><br><span class="small muted">${nice(parseIso(e.date))} · ${esc(short(e.category))}${e.paidFrom ? " · " + esc(e.paidFrom) : ""}${e.shared ? " · shared" : ""}${e.pending ? " · waiting to sync" : ""}</span></span><span style="display:flex;align-items:center;gap:2px"><span class="num">${fmt(num(e.amount))}</span><button class="iconbtn" type="button" aria-label="Delete ${esc(e.desc)}">✕</button></span>`;
+      const btn = li.querySelector("button");
+      btn.addEventListener("click", () => {
+        if (btn.dataset.armed !== "1") { btn.dataset.armed = "1"; btn.textContent = "Delete?"; btn.style.color = "var(--bad)"; setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ""; btn.textContent = "✕"; btn.style.color = ""; } }, 3000); return; }
+        if (e.pending) st.queue = st.queue.filter(q => !(q.type === "add" && q.expense.id === e.id));
+        else st.queue.push({type: "delete", id: e.id, row: e.row, amount: e.amount, desc: e.desc});
+        save(); render(); sync(true);
+      });
+      ul.appendChild(li);
+    });
+    if (!ul.children.length) ul.innerHTML = '<li><span class="muted">No payments logged yet.</span><span></span></li>';
+  }
+
+  // ---------- Monzo import ----------
+  function parseCSV(text) {
+    text = text.replace(/^﻿/, "");
+    const rows = []; let row = [], f = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+      else if (c === '"') q = true;
+      else if (c === ",") { row.push(f); f = ""; }
+      else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+      else f += c;
+    }
+    if (f.length || row.length) { row.push(f); rows.push(row); }
+    return rows.filter(r => r.some(x => x.trim()));
+  }
+  function toIso(s) {
+    s = String(s).trim();
+    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if (m) { const y = m[3].length === 2 ? "20" + m[3] : m[3]; return y + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0"); }
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + "-" + m[2] + "-" + m[3];
+    return "";
+  }
+  const FUEL = /\b(shell|bp|esso|texaco|gulf|jet|murco|applegreen|valero|fuel|petrol|pfs)\b/i;
+  function mapCategory(mcat, name, cats) {
+    const has = re => cats.find(c => re.test(c));
+    const c = String(mcat || "").toLowerCase().replace(/\s+/g, "_");
+    if (FUEL.test(name)) return has(/fuel/i);
+    if (c === "groceries") return has(/food/i);
+    if (c === "bills") return has(/personal bills/i);
+    if (c === "home") return has(/household/i);
+    if (c === "gifts" || c === "family") return has(/gift/i);
+    if (c === "transport" && FUEL.test(name)) return has(/fuel/i);
+    return has(/entertain/i) || cats[0];
+  }
+  let imp = [];
+  $("csv").addEventListener("change", async ev => {
+    const file = ev.target.files[0]; $("impStatus").textContent = ""; $("impBox").hidden = true; imp = [];
+    if (!file) return;
+    const rows = parseCSV(await file.text());
+    if (rows.length < 2) { $("impStatus").textContent = "That file looks empty."; return; }
+    const head = rows[0].map(h => h.trim().toLowerCase());
+    const col = re => head.findIndex(h => re.test(h));
+    const ci = {id: col(/^transaction id$/), date: col(/^date$/), type: col(/^type$/), name: col(/^name$/), cat: col(/^category$/), amt: col(/^amount$/), notes: col(/notes/), desc: col(/^description$/)};
+    if (ci.date < 0 || ci.amt < 0) { $("impStatus").textContent = "I couldn't find the Date and Amount columns. Check it's a Monzo CSV export."; return; }
+    const cats = st.snap?.categories || [];
+    const have = new Set((st.snap?.expenses || []).map(e => e.id).concat(st.queue.filter(q => q.type === "add").map(q => q.expense.id)));
+    const m = budgetModel(); const planStart = m && m.periods.length ? iso(m.periods[0].start) : "0000";
+    rows.slice(1).forEach(r => {
+      const amt = parseFloat(String(r[ci.amt] || "").replace(/[£,\s]/g, ""));
+      const d = toIso(r[ci.date]); if (!d || !(amt < 0)) return;
+      const type = ci.type >= 0 ? String(r[ci.type]) : "";
+      if (/pot transfer/i.test(type)) return;
+      const name = ((ci.name >= 0 ? r[ci.name] : "") || (ci.desc >= 0 ? r[ci.desc] : "") || "Payment").trim();
+      const tid = ci.id >= 0 && r[ci.id] ? "monzo-" + r[ci.id].trim() : "monzo-" + d + "-" + Math.abs(amt) + "-" + name.slice(0, 20);
+      if (have.has(tid) || imp.some(x => x.id === tid)) return;
+      const mcat = ci.cat >= 0 ? r[ci.cat] : "";
+      const isBill = /direct debit|standing order/i.test(type) || /bills|savings|transfers|finances/i.test(mcat);
+      imp.push({id: tid, date: d, amount: round2(-amt), desc: name, category: mapCategory(mcat, name, cats), paidFrom: /flex/i.test(type) ? (st.snap?.paidFrom || []).find(x => x === "Flex") || "Main account" : "Main account", old: d < planStart, on: !isBill && d >= planStart, mcat});
+    });
+    renderImp();
+  });
+  $("impOld").addEventListener("change", e => { imp.forEach(x => { if (x.old) x.on = e.target.checked && !/bills|savings|transfers|finances/i.test(x.mcat); }); renderImp(); });
+  function renderImp() {
+    const show = imp.filter(x => !x.old || $("impOld").checked);
+    if (!imp.length) { $("impStatus").textContent = "No new payments going out in that file."; return; }
+    $("impBox").hidden = false;
+    const oldN = imp.filter(x => x.old).length;
+    $("impInfo").textContent = show.length + " new payments" + (oldN && !$("impOld").checked ? " (plus " + oldN + " from before the plan, hidden)" : "") + ". Bills and transfers start unticked because they're already in the budget. Check each category.";
+    const cats = st.snap?.categories || [];
+    const tb = $("impRows"); tb.innerHTML = "";
+    show.forEach(x => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td><input type="checkbox" ${x.on ? "checked" : ""} aria-label="Add ${esc(x.desc)}" style="width:24px;height:24px"></td><td style="white-space:nowrap">${nice(parseIso(x.date))}</td><td style="overflow-wrap:anywhere">${esc(x.desc)}</td><td class="amt">${fmt(x.amount)}</td><td><select aria-label="Category for ${esc(x.desc)}">${cats.map(c => `<option value="${esc(c)}" ${c === x.category ? "selected" : ""}>${esc(short(c))}</option>`).join("")}</select></td>`;
+      tr.querySelector("input").addEventListener("change", e => x.on = e.target.checked);
+      tr.querySelector("select").addEventListener("change", e => x.category = e.target.value);
+      tb.appendChild(tr);
+    });
+  }
+  $("impBtn").addEventListener("click", async () => {
+    const todo = imp.filter(x => x.on && (!x.old || $("impOld").checked)); if (!todo.length) { $("impStatus").textContent = "Nothing ticked."; return; }
+    todo.forEach(x => st.queue.push({type: "add", expense: {id: x.id, date: x.date, desc: x.desc, category: x.category, amount: x.amount, paidFrom: x.paidFrom, notes: x.old ? "Imported for trends" : "Imported from Monzo", shared: false}}));
+    save(); imp = []; $("impBox").hidden = true; $("csv").value = "";
+    $("impStatus").textContent = "Adding " + todo.length + " payments…"; render();
+    await sync(true);
+    $("impStatus").textContent = st.queue.length ? "Added " + todo.length + " here. They'll save to the sheet when you're online." : "Added " + todo.length + " payments to the sheet.";
+  });
+
+  // ---------- payday pot sorter ----------
+  let payIdx = null;
+  function potPlan(m, p) {
+    const map = {};
+    const as = tab("App settings");
+    if (as) { const h = findRow(as, "Budget line"); if (h >= 0) for (let r = h + 1; r < as.v.length; r++) { const l = String(as.v[r][0] || "").trim(), pot = String(as.v[r][1] || "").trim(); if (l && pot) map[l] = pot; } }
+    const pb = tab("Personal bills");
+    let pbFromPot = null, pbFromMain = null;
+    if (pb) {
+      const h = findRow(pb, "Bill");
+      const c = h >= 0 ? pb.v[h].findIndex(x => String(x).trim() === p.name) : -1;
+      if (c > 0) { pbFromPot = cellNum(pb, findRowStarts(pb, "From Bills"), c); pbFromMain = cellNum(pb, findRowStarts(pb, "From main"), c); }
+    }
+    const pots = new Map();
+    const put = (pot, label, amount) => { if (!(Math.abs(amount) > 0.004)) return; if (!pots.has(pot)) pots.set(pot, {pot, total: 0, parts: []}); const o = pots.get(pot); o.total += amount; o.parts.push({label, amount}); };
+    [...m.spending, ...m.saving].forEach(line => {
+      const amt = cellNum(m.t, line.row, p.col); if (!(amt > 0)) return;
+      const pot = map[line.label] || "Main account";
+      if (line.label === "Personal bills" && pbFromPot !== null) { put(pot, "Personal bills (paid from the pot)", pbFromPot); put("Main account", "Personal bills (paid from main)", pbFromMain); }
+      else put(pot, line.label, amt);
+    });
+    const already = m.moneyIn.find(l => /already in/i.test(l.label));
+    if (already) {
+      const a = cellNum(m.t, already.row, p.col);
+      const billsPot = map["Rent"] || "Bills & Rent pot";
+      if (a > 0 && pots.has(billsPot)) put(billsPot, "Already in the pot", -a);
+    }
+    const extras = m.moneyIn.filter(l => !/already in|^pay/i.test(l.label)).map(l => ({label: l.label, amount: cellNum(m.t, l.row, p.col)})).filter(x => x.amount > 0);
+    const pay = m.moneyIn.length ? cellNum(m.t, m.moneyIn[0].row, p.col) : 0;
+    const list = [...pots.values()].sort((a, b) => (a.pot === "Main account") - (b.pot === "Main account"));
+    return {list, pay, extras};
+  }
+  function renderPay() {
+    const m = budgetModel(); if (!m || !m.periods.length) return;
+    const {idx, today} = currentPeriod(m);
+    if (payIdx === null || payIdx >= m.periods.length) {
+      const nextIdx = Math.min(m.periods.length - 1, idx + 1);
+      payIdx = dayDiff(today, m.periods[idx].next) <= 7 || m.periods[idx].name === "Now" ? nextIdx : idx;
+    }
+    const chips = $("payChips"); chips.innerHTML = "";
+    m.periods.forEach((p, i) => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = p.name === "Now" ? "Now" : p.name + " · " + p.start.getDate() + " " + p.start.toLocaleDateString("en-GB", {month: "short"}); b.setAttribute("aria-pressed", String(i === payIdx)); b.addEventListener("click", () => { payIdx = i; renderPay(); }); chips.appendChild(b); });
+    const p = m.periods[payIdx];
+    const plan = potPlan(m, p);
+    const tickKey = "pay-" + iso(p.start);
+    const ticks = st.ticks[tickKey] || {};
+    const moving = plan.list.filter(x => x.pot !== "Main account");
+    const toMove = moving.reduce((s, x) => s + x.total, 0);
+    const doneAmt = moving.filter(x => ticks[x.pot]).reduce((s, x) => s + x.total, 0);
+    $("payIn").textContent = (p.name === "Now" ? "Money now " : "Pay on " + nice(p.start) + ": ") + fmt(plan.pay) + (plan.extras.length ? " · plus " + plan.extras.map(x => x.label.toLowerCase() + " " + fmt(x.amount)).join(", ") : "") + " · to move:";
+    $("payTotal").textContent = fmt(toMove);
+    $("payBar").style.width = (toMove ? doneAmt / toMove * 100 : 0) + "%";
+    $("payDone").textContent = fmt(doneAmt) + " of " + fmt(toMove) + " moved. Tick each pot once you've moved the money.";
+    const box = $("pots"); box.innerHTML = "";
+    plan.list.forEach(x => {
+      const main = x.pot === "Main account";
+      const d = document.createElement("div"); d.className = "pot" + (ticks[x.pot] ? " done" : "");
+      d.innerHTML = `<div class="head">${main ? '<span style="width:26px"></span>' : `<input type="checkbox" ${ticks[x.pot] ? "checked" : ""} aria-label="Moved to ${esc(x.pot)}" style="width:26px;height:26px;accent-color:var(--accent)">`}<span class="what">${esc(main ? "Leave in main account" : x.pot)}</span><span class="num">${fmt(x.total)}</span></div><div class="parts small muted">${x.parts.map(pt => `<div><span>${esc(pt.label)}</span><span class="num" style="font-weight:400">${fmt(pt.amount)}</span></div>`).join("")}</div>`;
+      const cb = d.querySelector("input");
+      if (cb) cb.addEventListener("change", e => { st.ticks[tickKey] = Object.assign({}, st.ticks[tickKey], {[x.pot]: e.target.checked}); const ks = Object.keys(st.ticks).sort(); while (ks.length > 12) delete st.ticks[ks.shift()]; save(); renderPay(); });
+      box.appendChild(d);
+    });
+    if (!plan.list.length) box.innerHTML = '<p class="muted">Nothing planned for this period.</p>';
+  }
+
+  // ---------- sheet view ----------
+  const SHEET_TABS = ["This month", "Budget", "Personal bills", "Car costs", "Savings growth", "Sophie", "Christmas", "App settings"];
+  let sheetTab = "Budget";
+  function renderSheet() {
+    const chips = $("tabChips"); chips.innerHTML = "";
+    SHEET_TABS.filter(n => tab(n)).forEach(n => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = n; b.setAttribute("aria-pressed", String(n === sheetTab)); b.addEventListener("click", () => { sheetTab = n; renderSheet(); }); chips.appendChild(b); });
+    const t = tab(sheetTab); const view = $("sheetView"); view.innerHTML = "";
+    if (!t) return;
+    const usedCols = Math.max(1, ...t.d.map((r, ri) => { let l = 0; r.forEach((x, i) => { if (String(x).trim() !== "" || t.e[ri][i]) l = i + 1; }); return l; }));
+    const head = document.createElement("div"); head.className = "card sheettext";
+    head.innerHTML = `<h2>${esc(t.d[0]?.[0] || sheetTab)}</h2>${t.d[1] && t.d[1][0] && t.d[1].slice(1).every(x => !x) ? `<p class="small muted">${esc(t.d[1][0])}</p>` : ""}`;
+    view.appendChild(head);
+    const wrap = document.createElement("div"); wrap.className = "sheetwrap";
+    const table = document.createElement("table"); table.className = "sheet";
+    const startRow = t.d[1] && t.d[1][0] && t.d[1].slice(1).every(x => !x) ? 2 : 1;
+    let blank = 0;
+    for (let r = startRow; r < t.d.length; r++) {
+      const row = t.d[r].slice(0, usedCols);
+      const empty = row.every((x, c) => String(x).trim() === "" && !t.e[r][c]);
+      if (empty) { blank++; if (blank === 1 && r > startRow) { const tr = document.createElement("tr"); tr.innerHTML = `<td colspan="${usedCols}" style="border:0;padding:4px"></td>`; table.appendChild(tr); } continue; }
+      blank = 0;
+      const tr = document.createElement("tr");
+      const label = String(row[0] || "");
+      const onlyLabel = label && row.slice(1).every((x, c) => String(x).trim() === "" && !t.e[r][c + 1]);
+      const textCells = row.slice(1).filter(x => x && !/^[-–]$/.test(String(x).trim()) && !/[0-9£%]/.test(x)).length;
+      if (onlyLabel) tr.className = "sec";
+      else if (textCells >= Math.max(2, Math.ceil((usedCols - 1) * 0.6)) && !t.e[r].some(Boolean)) tr.className = "hdr";
+      else if (/^total/i.test(label)) tr.className = "tot";
+      for (let c = 0; c < usedCols; c++) {
+        const td = document.createElement("td");
+        const val = String(row[c] ?? "");
+        if (t.e[r][c]) {
+          td.className = "in";
+          const b = document.createElement("button"); b.type = "button"; b.textContent = val === "" ? "Add" : (typeof t.v[r][c] === "boolean" ? (t.v[r][c] ? "✓ Yes" : "No") : val);
+          b.setAttribute("aria-label", "Change " + (label || "cell") + (val ? ", now " + val : ""));
+          b.addEventListener("click", () => openCell(sheetTab, r, c));
+          td.appendChild(b);
+        } else {
+          td.textContent = val;
+          if (c > 0 && val && !/^[-£0-9.,%\s()x]+$/.test(val) && !/^\d{1,2} [A-Z][a-z]{2}/.test(val) && !/^[A-Z][a-z]{2} \d/.test(val) && val.length > 14) td.className = "txt";
+        }
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+    wrap.appendChild(table); view.appendChild(wrap);
+  }
+
+  // ---------- edit dialog ----------
+  let edit = null;
+  function colHeader(t, r, c) {
+    for (let x = r - 1; x >= 0; x--) { const v = String(t.d[x][c] || "").trim(); if (v && !/^[-–]$/.test(v) && !/[0-9£%]/.test(v) && String(t.d[x][0] || "").trim()) return v; }
+    return "";
+  }
+  function cellType(t, r, c) {
+    const raw = t.v[r][c]; const f = String(t.f?.[r + "," + c] || "");
+    if (typeof raw === "boolean") return "bool";
+    if (isIso(raw) || (/d/.test(f) && /y/.test(f))) return "date";
+    if (typeof raw === "number" || /[0#£%]/.test(f)) return "number";
+    return "text";
+  }
+  function openCell(tabName, r, c) {
+    const t = tab(tabName); if (!t || !t.e[r] || !t.e[r][c]) return;
+    const type = cellType(t, r, c); const raw = t.v[r][c];
+    const label = String(t.d[r][0] || "").trim(); const ch = colHeader(t, r, c);
+    edit = {tab: tabName, row: r, col: c, type};
+    $("dTitle").textContent = label || "Change cell";
+    $("dWhere").textContent = tabName + " tab" + (ch ? " · " + ch : "") + " · now " + (t.d[r][c] || "empty");
+    const f = $("dField"); f.innerHTML = "";
+    if (type === "bool") f.innerHTML = `<label style="display:flex;gap:10px;align-items:center;font-weight:700"><input id="dIn" type="checkbox" ${raw ? "checked" : ""} style="width:28px;height:28px;accent-color:var(--accent)"> Yes</label>`;
+    else if (type === "date") f.innerHTML = `<input id="dIn" type="date" value="${esc(isIso(raw) ? raw : "")}">`;
+    else if (type === "number") { const pct = /%/.test(String(t.f?.[r + "," + c] || "")); edit.pct = pct; f.innerHTML = `<input id="dIn" class="amount" type="number" inputmode="decimal" step="any" value="${raw === "" ? "" : esc(pct ? round2(Number(raw) * 100) : raw)}">${pct ? '<p class="small muted">Enter as a percentage, e.g. 4.15</p>' : ""}`; }
+    else f.innerHTML = `<input id="dIn" type="text" maxlength="300" value="${esc(raw)}">`;
+    $("dStatus").textContent = st.cfg ? "" : "Connect to your sheet first.";
+    $("dSave").disabled = !st.cfg;
+    $("dlg").showModal();
+    setTimeout(() => { const i = $("dIn"); if (i && i.type !== "checkbox") { i.focus(); if (i.select) try { i.select(); } catch (e) {} } }, 50);
+  }
+  function openBudgetCell(m, line, p) {
+    const t = m.t;
+    if (t.e[line.row] && t.e[line.row][p.col]) { openCell("Budget", line.row, p.col); return; }
+    edit = null;
+    $("dTitle").textContent = line.label;
+    $("dWhere").textContent = "Budget tab · " + p.name + " column";
+    $("dField").innerHTML = `<p>This amount is worked out by the sheet (${esc(t.d[line.row][p.col] || "–")}), so it changes when its inputs change.${/personal bills/i.test(line.label) ? " Change individual bills on the Personal bills tab." : /emergency/i.test(line.label) ? " It's what's left after everything else in this period." : ""}</p>`;
+    $("dSave").disabled = true; $("dStatus").textContent = "";
+    $("dlg").showModal();
+  }
+  $("dCancel").addEventListener("click", () => $("dlg").close());
+  $("dForm").addEventListener("submit", async ev => {
+    ev.preventDefault(); if (!edit) { $("dlg").close(); return; }
+    const i = $("dIn"); let value;
+    if (edit.type === "bool") value = i.checked;
+    else if (edit.type === "number") { value = i.value === "" ? "" : Number(i.value); if (edit.pct && value !== "") value = value / 100; }
+    else value = i.value;
+    $("dSave").disabled = true; $("dStatus").textContent = "Saving to the sheet…";
+    try { await call({action: "set", tab: edit.tab, row: edit.row, col: edit.col, type: edit.type, value}); $("dlg").close(); render(); }
+    catch (e) { $("dStatus").textContent = e.code === "offline" ? "You're offline. Changes to the sheet need a connection." : e.message; }
+    $("dSave").disabled = false;
+  });
+
+  // ---------- connect / settings ----------
+  $("connForm").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const url = $("cUrl").value.trim(), key = $("cKey").value.trim();
+    if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) { $("cStatus").textContent = "That doesn't look like an Apps Script web app URL (it should end in /exec)."; return; }
+    if (!key) { $("cStatus").textContent = "Paste the app key."; return; }
+    st.cfg = {url, key}; $("cStatus").textContent = "Connecting…";
+    try { await call({action: "snapshot"}); $("cStatus").textContent = ""; $("cKey").value = ""; save(); render(); }
+    catch (e) { st.cfg = null; $("cStatus").textContent = e.code === "offline" ? "No connection. Try again with signal." : e.message; }
+  });
+  $("refreshBtn").addEventListener("click", () => sync(false));
+  $("syncBtn").addEventListener("click", () => sync(false));
+  $("disconnectBtn").addEventListener("click", ev => {
+    const b = ev.currentTarget;
+    if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Tap again to disconnect"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Disconnect"; }, 3000); return; }
+    st = {cfg: null, snap: null, queue: st.queue, ticks: st.ticks, lastSync: 0}; save(); render();
+  });
+
+  // ---------- tabs ----------
+  const TABS = ["today", "add", "pay", "sheet"];
+  function show(name) { TABS.forEach(t => { $("tab-" + t).setAttribute("aria-selected", String(t === name)); $("p-" + t).hidden = t !== name; }); window.scrollTo(0, 0); }
+  TABS.forEach(t => $("tab-" + t).addEventListener("click", () => show(t)));
+
+  // ---------- lifecycle ----------
+  window.addEventListener("online", () => sync(true));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { render(); if (Date.now() - st.lastSync > 60000 || st.queue.length) sync(true); } });
+  setInterval(syncLabel, 30000);
+
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+    const had = !!navigator.serviceWorker.controller; let reloading = false;
+    navigator.serviceWorker.register("./sw.js").then(reg => { document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update().catch(() => {}); }); }).catch(() => {});
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !reloading && !st.queue.length) { reloading = true; location.reload(); } });
+  }
+
+  render();
+  if (st.cfg) sync(true);
+  window.__em = {budgetModel, potPlan, currentPeriod, allExpenses};
+})();
+</script>
+</body>
+</html>
