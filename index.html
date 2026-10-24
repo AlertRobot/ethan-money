@@ -272,9 +272,10 @@ footer{text-align:center}
     name: "Ethan's money", key: "ethanMoney.v1", bank: "Monzo",
     flex: /food|fuel|entertain|gift|household|christmas/i,   // day-to-day budgets shown as tiles
     pace: /food|entertain/i,                                  // steady spending that gets a pace forecast
+    flexWords: "food, fuel and spending",
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.1.0";
+  const APP_VERSION = "1.1.1";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -470,7 +471,7 @@ footer{text-align:center}
     if (!tiles.children.length) tiles.innerHTML = '<p class="small muted">No spending budgets in this period.</p>';
     if (!fixed.children.length) fixed.innerHTML = '<li><span class="muted">Nothing set aside this period.</span><span></span></li>';
     $("flexLeft").textContent = fmt(flexLeft); $("flexLeft").style.color = flexLeft < 0 ? "var(--bad)" : "";
-    $("flexInfo").textContent = daysLeft > 0 ? "About " + fmt(flexLeft / daysLeft) + " a day across food, fuel and spending until payday." : "Payday is today.";
+    $("flexInfo").textContent = daysLeft > 0 ? "About " + fmt(flexLeft / daysLeft) + " a day across " + CONFIG.flexWords + " until payday." : "Payday is today.";
 
     renderTrends(m, ex, idx);
     renderGlance();
