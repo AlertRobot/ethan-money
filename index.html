@@ -66,6 +66,8 @@ p{margin:0}
 .seg[hidden]{display:none}
 .seg button{font:inherit;font-size:.92rem;font-weight:700;border:0;background:transparent;color:var(--muted);border-radius:9px;padding:9px 0;min-height:40px;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--ink)}
+.summ{display:grid;gap:4px;background:var(--accent-soft);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.summ .row{align-items:center}
 .potc .act{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .potc details summary{cursor:pointer;color:var(--muted);font-size:.87rem}
 .potc details .list li{padding:7px 0}
@@ -334,6 +336,7 @@ footer{text-align:center}
       <div class="row"><h2>Should be in total</h2><span class="big" id="potTotal">–</span></div>
       <p class="small muted" id="potInfo"></p>
       <p class="note" id="potCheck" hidden></p>
+      <button class="btn" type="button" id="moveBtn">Move money between pots</button>
     </div>
     <div class="card" id="potTipsCard" hidden>
       <h2>To make them match the plan</h2>
@@ -384,7 +387,7 @@ footer{text-align:center}
     flexWords: "food, fuel and spending",
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.4.1";
+  const APP_VERSION = "1.5.0";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1120,6 +1123,12 @@ footer{text-align:center}
       add(p.name, "Balance on your " + ledger.name + " tab", {amount: bal, kind: "ledger", note: "until " + nice(parseIso(ledger.last))});
       if (/whole/i.test(p.how)) { const sp = ex.filter(e => e.date >= ledger.first && findPot(e.paidFrom) === p.name).reduce((x, e) => x + num(e.amount), 0); if (sp > 0) add(p.name, "Spent since " + nice(parseIso(ledger.first)), {amount: -sp, kind: "ledger"}); }
       p.ledger = ledger;
+      if (/whole/i.test(p.how)) pots.forEach(q => {
+        if (q === p || String(q.actual).trim() === "" || q.actual === null || q.actual === undefined) return;
+        const a = num(q.actual); if (!a) return;
+        add(q.name, "Moved here from your main account", {amount: a, kind: "ledger", note: "your last check"});
+        add(p.name, "In " + q.name, {amount: -a, kind: "ledger"});
+      });
     });
     const cur = m.periods[idx];
     const extras = m.moneyIn.filter(l => !/already in|^pay/i.test(l.label)).map(l => ({label: l.label, amount: cellNum(m.t, l.row, cur.col)})).filter(x => x.amount > 0);
@@ -1170,18 +1179,43 @@ footer{text-align:center}
       const parts = [...p.parts.values()].filter(x => Math.abs(x.amount) > 0.004 || x.spent > 0);
       d.innerHTML = `<div class="row"><h3>${esc(p.name)}</h3><span class="num" style="font-size:1.25rem">${fmt(p.should)}</span></div>
         ${p.ledger ? `<p class="small muted">From your ${esc(p.ledger.name)} tab until ${nice(parseIso(p.ledger.last))}.</p>` : ""}
-        <div class="act">${act || '<span class="small muted">Not checked yet</span>'}${p.editable ? '<button class="btn ghost" type="button" style="min-height:40px;padding:8px 14px">Enter what it has</button>' : ""}</div>
+        <div class="act">${act || '<span class="small muted">Not checked yet</span>'}</div>
+        ${p.editable ? '<div class="btns"><button class="btn ghost" type="button" data-a="check" style="min-height:40px;padding:8px 14px">Enter what it has</button><button class="btn ghost" type="button" data-a="move" style="min-height:40px;padding:8px 14px">Move money here</button></div>' : ""}
         ${parts.length ? `<details><summary>How it's worked out</summary><ul class="list small">${parts.map(x => `<li><span style="min-width:0">${esc(short(x.label))}<br><span class="muted">${x.kind === "spend" ? fmt(x.budget) + " budgeted" + (x.spent > 0 ? " − " + fmt(x.spent) + " spent" : "") : esc([...x.notes].join(", "))}</span></span><span class="num">${fmt(x.amount)}</span></li>`).join("")}</ul></details>` : '<p class="small muted">Nothing planned for this one right now.</p>'}`;
-      const b = d.querySelector("button"); if (b) b.addEventListener("click", () => openPotCheck(p));
+      d.querySelectorAll("button[data-a]").forEach(b => b.addEventListener("click", () => b.dataset.a === "move" ? openMove(pm, p.name) : openPotCheck(p, pm)));
       list.appendChild(d);
     });
     $("potHow").hidden = !pm.pots.some(p => p.editable);
+    $("moveBtn").hidden = pm.pots.filter(p => p.editable).length < 2;
+    $("moveBtn").onclick = () => openMove(pm, null);
   }
-  function openPotCheck(p) {
+  // what each pot has now: today's check if there is one, otherwise what it should have
+  const potNow = (p, tIso) => (isIso(p.checked) && p.checked === tIso && String(p.actual).trim() !== "") ? num(p.actual) : p.should;
+  function potSummary(pm) {
+    const tIso = iso(pm.today);
+    const rows = pm.pots.filter(p => p.editable || Math.abs(p.should) > 0.004);
+    const total = rows.reduce((x, p) => x + potNow(p, tIso), 0);
+    return `<div class="summ"><div class="row"><b>Total</b><span class="num">${fmt(total)}</span></div>${rows.map(p => `<div class="row small"><span>${esc(p.name)}</span><span class="num" style="font-weight:600">${fmt(potNow(p, tIso))}</span></div>`).join("")}</div>`;
+  }
+  function openMove(pm, toName) {
+    const ed = pm.pots.filter(p => p.editable); if (ed.length < 2) return;
+    const main = ed.find(p => /^main/i.test(p.name)) || ed[0];
+    const to = ed.find(p => p.name === toName && p !== main) || ed.find(p => p !== main);
+    edit = {move: true, pm}; $("dSave").textContent = "Move it";
+    $("dTitle").textContent = "Move money";
+    $("dWhere").textContent = "Move money between your pots, then do the same in your banking app. Both balances update here.";
+    const opts = sel => ed.map(p => `<option value="${p.row}"${p === sel ? " selected" : ""}>${esc(p.name)}</option>`).join("");
+    $("dField").innerHTML = `${potSummary(pm)}<div class="two"><div class="field"><label for="mvFrom">From</label><select id="mvFrom">${opts(main)}</select></div><div class="field"><label for="mvTo">To</label><select id="mvTo">${opts(to)}</select></div></div><div class="field"><label for="dIn">Amount (£)</label><input id="dIn" class="amount" type="number" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00"></div>`;
+    $("dStatus").textContent = st.cfg ? "" : "Connect to your sheet first.";
+    $("dSave").disabled = !st.cfg;
+    $("dlg").showModal();
+    setTimeout(() => { const i = $("dIn"); if (i) i.focus(); }, 50);
+  }
+  function openPotCheck(p, pm) {
     edit = {pot: p.row};
     $("dTitle").textContent = p.name;
-    $("dWhere").textContent = "What does your banking app show right now? It should have " + fmt(p.should) + ".";
-    $("dField").innerHTML = `<input id="dIn" class="amount" type="number" inputmode="decimal" step="0.01" value="${p.actual === "" ? "" : esc(p.actual)}" placeholder="0.00">`;
+    $("dWhere").textContent = "What does your banking app show for this one right now? It should have " + fmt(p.should) + ".";
+    $("dField").innerHTML = `${pm ? potSummary(pm) : ""}<div class="field"><label for="dIn">${esc(p.name)} has (£)</label><input id="dIn" class="amount" type="number" inputmode="decimal" step="0.01" value="${p.actual === "" ? "" : esc(p.actual)}" placeholder="0.00"></div>`;
     $("dStatus").textContent = st.cfg ? "" : "Connect to your sheet first.";
     $("dSave").disabled = !st.cfg;
     $("dlg").showModal();
@@ -1276,9 +1310,23 @@ footer{text-align:center}
     $("dlg").showModal();
   }
   $("dCancel").addEventListener("click", () => $("dlg").close());
+  $("dlg").addEventListener("close", () => { $("dSave").textContent = "Save to sheet"; });
   $("dForm").addEventListener("submit", async ev => {
     ev.preventDefault(); if (!edit) { $("dlg").close(); return; }
     const i = $("dIn"); let value;
+    if (edit.move) {
+      const amt = Number(i.value), fr = Number($("mvFrom").value), tr = Number($("mvTo").value);
+      if (!(amt > 0)) { $("dStatus").textContent = "Type how much you're moving."; return; }
+      if (fr === tr) { $("dStatus").textContent = "Pick two different pots."; return; }
+      const tIso = iso(new Date()), pf = edit.pm.pots.find(p => p.row === fr), pt2 = edit.pm.pots.find(p => p.row === tr);
+      const nf = round2(potNow(pf, tIso) - amt), nt = round2(potNow(pt2, tIso) + amt);
+      $("dSave").disabled = true; $("dStatus").textContent = "Saving to the sheet…";
+      try {
+        for (const [row, val] of [[fr, nf], [tr, nt]]) { await call({action: "set", tab: "Pot check", row, col: 1, type: "number", value: val}); await call({action: "set", tab: "Pot check", row, col: 2, type: "date", value: tIso}); }
+        $("dlg").close(); render();
+      } catch (e) { $("dStatus").textContent = e.code === "offline" ? "You're offline. Moving money needs a connection." : e.message; }
+      $("dSave").disabled = false; return;
+    }
     if (edit.pot !== undefined) {
       if (i.value === "") { $("dStatus").textContent = "Type the balance first."; return; }
       $("dSave").disabled = true; $("dStatus").textContent = "Saving to the sheet…";
