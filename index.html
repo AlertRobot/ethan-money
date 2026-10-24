@@ -387,7 +387,7 @@ footer{text-align:center}
     pot: "pot", pots: "pots",                                 // what the bank calls them (Monzo pots, Starling Spaces)
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.7.1";
+  const APP_VERSION = "1.7.2";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -653,13 +653,16 @@ footer{text-align:center}
       let big, main, sub;
       if (o.drip) {
         const over = o.avail < -0.004;
-        const capped = cash && !over && cash.free < o.avail - 0.004;
+        // before payday: only what's actually free, spread over the days until the next money arrives
+        const toNext = cash ? Math.max(1, cash.until ? dayDiff(todayDate(), parseIso(cash.until)) : daysLeft) : 1;
+        const cashDaily = cash ? cash.free / toNext : Infinity;
+        const capped = cash && !over && cashDaily < o.daily - 0.004;
         b.className = "tile" + (over ? " warn" : "");
-        big = fmt(capped ? cash.free : Math.max(0, o.avail));
-        main = over ? "to spend today. You're " + fmt(-o.avail) + " over so far. " + back(Math.ceil(-o.avail / o.daily))
-          : capped ? "free to spend" + (cash.until ? " until " + nice(parseIso(cash.until)) + ", when " + cash.from.replace(/\s*\(.*$/, "").replace(/\s+\d+$/, "").replace(/^From your/i, "the money from your").toLowerCase() + " arrives" : "") + ". The rest of your account is for bills."
-          : "to spend today";
-        sub = "+" + fmt(o.daily) + " each day · " + fmt(o.sp) + " of " + fmt(o.budget) + " spent";
+        big = fmt(capped ? Math.min(Math.max(0, o.avail), cashDaily) : Math.max(0, o.avail));
+        main = over ? "to spend today. You're " + fmt(-o.avail) + " over so far. " + back(Math.ceil(-o.avail / o.daily)) : "to spend today";
+        sub = capped
+          ? fmt(cash.free) + " free until " + (cash.until ? nice(parseIso(cash.until)) + ", when " + cash.from.replace(/\s*\(.*$/, "").replace(/\s+\d+$/, "").replace(/^From your/i, "the money from your").toLowerCase() + " arrives" : "payday") + " · about " + fmt(cashDaily) + " a day. The rest of your account is for bills."
+          : "+" + fmt(o.daily) + " each day · " + fmt(o.sp) + " of " + fmt(o.budget) + " spent";
         if (Math.abs(o.carry) >= 0.5) sub += o.carry > 0 ? " · includes " + fmt(o.carry) + " saved from earlier months" : " · " + fmt(-o.carry) + " overspent earlier";
       } else {
         b.className = "tile" + (o.left < -0.004 ? " over" : "");
