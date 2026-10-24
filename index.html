@@ -323,6 +323,8 @@ footer{text-align:center}
       <h2><span class="w-Pot">Pot</span> sorter</h2>
       <div class="chips" id="payChips" role="group" aria-label="Pay period"></div>
       <div class="row"><span class="muted" id="payIn"></span><span class="big" id="payTotal">–</span></div>
+      <div class="row" id="payActualRow" hidden><span class="small" id="payActual"></span><button class="btn ghost" type="button" id="payActualBtn" style="min-height:40px;padding:8px 14px">Got paid a different amount?</button></div>
+      <p class="note bad" id="payShort" hidden></p>
       <div class="bar" aria-hidden="true"><span id="payBar"></span></div>
       <p class="small muted" id="payDone"></p>
       <div id="pots"></div>
@@ -387,7 +389,7 @@ footer{text-align:center}
     pot: "pot", pots: "pots",                                 // what the bank calls them (Monzo pots, Starling Spaces)
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.7.2";
+  const APP_VERSION = "1.8.0";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -619,8 +621,11 @@ footer{text-align:center}
     $("flexInfo").textContent = daysLeft > 0 ? "About " + fmt(flexLeft / daysLeft) + " a day across " + CONFIG.flexWords + " until payday." : "Payday is today.";
   }
 
+  // how far pay falls short once the "what's left" savings line has nothing left to give
+  function shortfall(m, p) { const l = m.saving.find(x => /what's left/i.test(x.label)); const v = l ? cellNum(m.t, l.row, p.col) : 0; return v < -0.004 ? -v : 0; }
   function renderAlerts(m, idx, p, lines, ex, daysLeft, today) {
     const out = [];
+    const sf = shortfall(m, p); if (sf > 0.004) out.push(["bad", "Your pay this month is " + fmt(sf) + " short of the plan. Lower a budget for this month (Budget tab) to make it up."]);
     lines.forEach(o => {
       if (!(o.budget > 0) && !(o.sp > 0)) return;
       const n = short(o.label);
@@ -1002,6 +1007,19 @@ footer{text-align:center}
     $("payTotal").textContent = fmt(toMove);
     $("payBar").style.width = (toMove ? doneAmt / toMove * 100 : 0) + "%";
     $("payDone").textContent = fmt(doneAmt) + " of " + fmt(toMove) + " moved. Tick each " + CONFIG.pot + " once you've moved the money.";
+    // actual pay: shifts, overtime and bank holidays change it; the difference goes to (or comes out of) savings first
+    const ar = findRowStarts(m.t, "Actual pay");
+    const canSet = ar >= 0 && m.t.e[ar] && m.t.e[ar][p.col];
+    $("payActualRow").hidden = !canSet;
+    if (canSet) {
+      const raw = m.t.v[ar][p.col], has = raw !== "" && raw !== null && raw !== undefined;
+      $("payActual").textContent = has ? "Using your actual pay of " + fmt(num(raw)) + "." : "This is the planned pay.";
+      $("payActualBtn").textContent = has ? "Change actual pay" : "Got paid a different amount?";
+      $("payActualBtn").onclick = () => openCell("Budget", ar, p.col);
+    }
+    const left = shortfall(m, p);
+    $("payShort").hidden = !(left > 0.004);
+    $("payShort").textContent = left > 0.004 ? "This pay is " + fmt(left) + " short of everything planned, even after taking nothing for savings. Lower a budget for this month in the Sheet section (Budget tab) to make up the difference." : "";
     const box = $("pots"); box.innerHTML = "";
     plan.list.forEach(x => {
       const main = x.pot === "Main account";
