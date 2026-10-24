@@ -101,8 +101,11 @@ function ss_() {
   return ss_cache_;
 }
 function tz_() { return ss_().getSpreadsheetTimeZone() || Session.getScriptTimeZone() || "Europe/London"; }
-function cellOut_(v) {
+function isDateFmt_(f) { f = String(f || "").toLowerCase().replace(/"[^"]*"/g, ""); return /y/.test(f) && /d/.test(f) && !/[#0]/.test(f); }
+function serialToIso_(n) { var d = new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000); return d.getUTCFullYear() + "-" + ("0" + (d.getUTCMonth() + 1)).slice(-2) + "-" + ("0" + d.getUTCDate()).slice(-2); }
+function cellOut_(v, fmt) {
   if (v instanceof Date) return Utilities.formatDate(v, tz_(), "yyyy-MM-dd");
+  if (typeof v === "number" && fmt !== undefined && isDateFmt_(fmt)) return serialToIso_(v);
   return v;
 }
 
@@ -134,7 +137,7 @@ function readTab_(sh) {
     var vr = [], er = [];
     for (var c = 0; c < lastCol; c++) {
       var raw = vals[r][c];
-      vr.push(cellOut_(raw));
+      vr.push(cellOut_(raw, fmts[r][c]));
       var editable = !forms[r][c] && (fonts[r][c] === BLUE || typeof raw === "boolean") ? 1 : 0;
       er.push(editable);
       if (editable) f[r + "," + c] = fmts[r][c];
@@ -175,13 +178,14 @@ function readLog_() {
   var last = sh.getLastRow();
   if (last < LOG_FIRST_ROW) return [];
   var width = Math.max(9, sh.getLastColumn());
-  var vals = sh.getRange(LOG_FIRST_ROW, 1, last - LOG_FIRST_ROW + 1, width).getValues();
+  var rg = sh.getRange(LOG_FIRST_ROW, 1, last - LOG_FIRST_ROW + 1, width);
+  var vals = rg.getValues(), fmts = rg.getNumberFormats();
   var out = [];
   vals.forEach(function (r, i) {
     if (r[0] === "" || r[0] === null) return;
     out.push({
       row: LOG_FIRST_ROW + i,
-      date: cellOut_(r[0]),
+      date: cellOut_(r[0], typeof r[0] === "number" ? (fmts[i][0] || "dd/mm/yyyy") : undefined),
       desc: String(r[1] || ""),
       category: String(r[2] || ""),
       amount: Number(r[3]) || 0,
