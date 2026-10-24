@@ -51,7 +51,8 @@ p{margin:0}
 .sync{font:inherit;font-size:.85rem;border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;padding:6px 12px;cursor:pointer;min-height:36px;white-space:nowrap}
 .sync.warn{color:var(--warn);border-color:var(--warn)}
 .sync.bad{color:var(--bad);border-color:var(--bad)}
-.tabs{position:sticky;top:0;z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding-block:8px;padding-top:calc(env(safe-area-inset-top,0px) + 6px);margin-top:calc(-1 * env(safe-area-inset-top,0px))}
+.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding-block:8px}
+.tabs.stuck{box-shadow:0 calc(-1 * env(safe-area-inset-top,0px)) 0 0 var(--bg),0 6px 10px -8px rgba(0,0,0,.25)}
 .tabs button{font:inherit;font-size:.9rem;font-weight:700;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:12px 0;cursor:pointer;min-height:46px;min-width:0}
 .tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -316,7 +317,7 @@ footer{text-align:center}
     flexWords: "food, fuel and spending",
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.2.3";
+  const APP_VERSION = "1.2.4";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -584,7 +585,7 @@ footer{text-align:center}
     });
     const drips = pots.filter(o => o.drip).map(o => short(o.label).toLowerCase());
     $("todayNote").textContent = drips.length
-      ? (drips.length > 1 ? drips.slice(0, -1).join(", ") + " and " + drips[drips.length - 1] : drips[0]).replace(/^./, c => c.toUpperCase()) + " build up a little every day, so you can't spend the lot at once. Whatever you don't spend keeps building, ready for something bigger. The other pots show what's left until payday."
+      ? (drips.length > 1 ? drips.slice(0, -1).join(", ") + " and " + drips[drips.length - 1] : drips[0]).replace(/^./, c => c.toUpperCase()) + (drips.length > 1 ? " build" : " builds") + " up a little every day, so you can't spend the lot at once. Whatever you don't spend keeps building, ready for something bigger. The other pots show what's left until payday."
       : "What's left in each pot until payday.";
     $("todayCard").hidden = !box.children.length;
   }
@@ -993,6 +994,12 @@ footer{text-align:center}
 
   document.title = CONFIG.name.replace(/^./, c => c.toUpperCase()).replace(" money", " Money");
   document.querySelector("header h1").textContent = CONFIG.name;
+  // tab bar: when it sticks to the top, paint the camera/notch strip above it so nothing scrolls through behind it
+  (() => {
+    const nav = document.querySelector("nav.tabs");
+    const check = () => { const top = parseFloat(getComputedStyle(nav).top) || 0; nav.classList.toggle("stuck", nav.getBoundingClientRect().top <= top + 0.5 && window.scrollY > 0); };
+    window.addEventListener("scroll", check, {passive: true}); window.addEventListener("resize", check); check();
+  })();
   $("impTitle").textContent = "Import from " + CONFIG.bank; $("impHelp").textContent = CONFIG.bankHelp; $("csvLab").textContent = CONFIG.bank + " export (.csv)";
   render();
   if (st.cfg) sync(true);
