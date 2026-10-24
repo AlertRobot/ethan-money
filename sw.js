@@ -1,5 +1,5 @@
 // Offline support for Ethan's Money. Bump VERSION whenever any file changes.
-const VERSION = "1.3.1";
+const VERSION = "1.4.0";
 const CACHE = "ethan-money-" + VERSION;
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, {cache: "reload"})))).then(() => self.skipWaiting())); });

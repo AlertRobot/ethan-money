@@ -48,10 +48,17 @@ p{margin:0}
 .num{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:12px;min-width:0}
 .top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.hbtns{display:flex;gap:8px;align-items:center}
+.gear{display:grid;place-items:center;border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;width:40px;height:40px;padding:0;cursor:pointer}
+.gear[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.list.todo li{grid-template-columns:auto 1fr auto;transition:opacity .25s}
+.list.todo li.gone{opacity:0}
+.list.todo input{width:26px;height:26px;accent-color:var(--accent);margin:0}
+.list.todo button.link{font:inherit;font-size:.87rem;background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;cursor:pointer}
 .sync{font:inherit;font-size:.85rem;border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;padding:6px 12px;cursor:pointer;min-height:36px;white-space:nowrap}
 .sync.warn{color:var(--warn);border-color:var(--warn)}
 .sync.bad{color:var(--bad);border-color:var(--bad)}
-.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding-block:8px}
+.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-block:8px}
 .tabs.stuck{box-shadow:0 calc(-1 * env(safe-area-inset-top,0px)) 0 0 var(--bg),0 6px 10px -8px rgba(0,0,0,.25)}
 .tabs button{font:inherit;font-size:.9rem;font-weight:700;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:12px 0;cursor:pointer;min-height:46px;min-width:0}
 .tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
@@ -146,7 +153,10 @@ footer{text-align:center}
 <div class="wrap">
   <header class="top">
     <h1>Ethan's money</h1>
-    <button class="sync" type="button" id="syncBtn" aria-live="polite">…</button>
+    <div class="hbtns">
+      <button class="sync" type="button" id="syncBtn" aria-live="polite">…</button>
+      <button class="gear" type="button" id="tab-sheet" aria-label="Settings and sheet" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+    </div>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Sections">
@@ -154,7 +164,6 @@ footer{text-align:center}
     <button role="tab" id="tab-add" aria-selected="false" aria-controls="p-add">Add</button>
     <button role="tab" id="tab-pay" aria-selected="false" aria-controls="p-pay">Payday</button>
     <button role="tab" id="tab-pots" aria-selected="false" aria-controls="p-pots">Pots</button>
-    <button role="tab" id="tab-sheet" aria-selected="false" aria-controls="p-sheet">Sheet</button>
   </nav>
 
   <div class="seg" id="viewSeg" role="group" aria-label="Show">
@@ -183,6 +192,12 @@ footer{text-align:center}
       <div class="row"><h2 id="pName">This pay period</h2><span class="big" id="pDays">–</span></div>
       <p class="muted" id="pInfo">Loading…</p>
       <p class="note" id="pWarn" hidden></p>
+    </div>
+
+    <div class="card" id="todoCard" hidden>
+      <div class="row"><h2>To do</h2><span class="small muted" id="todoCount"></span></div>
+      <ul class="list todo" id="todo"></ul>
+      <p class="small muted">Tick each one once it's done and it disappears.</p>
     </div>
 
     <div class="card">
@@ -322,16 +337,17 @@ footer{text-align:center}
     </div>
     <div class="card" id="potTipsCard" hidden>
       <h2>To make them match the plan</h2>
-      <ul class="list" id="potTips"></ul>
-      <p class="small muted">You paid for these from a different pot or account than the one the money was set aside in. Move the money across, or leave it and just compare the total.</p>
+      <ul class="list todo" id="potTips"></ul>
+      <p class="small muted">You paid for these from a different pot or account than the one the money was set aside in. Move the money across and tick it off, or leave it and just compare the total.</p>
     </div>
     <div id="potList" style="display:grid;gap:10px"></div>
     <p class="small muted" id="potHow">Tap "Enter what it has" and type the balance your banking app shows. It's saved on the Pot check tab of your sheet. How each budget line is counted is set in the "When it leaves" column of the App settings tab.</p>
   </section>
 
   <!-- SHEET -->
-  <section id="p-sheet" role="tabpanel" aria-labelledby="tab-sheet" hidden style="display:grid;gap:14px">
+  <section id="p-sheet" role="tabpanel" aria-label="Settings and sheet" hidden style="display:grid;gap:14px">
     <div class="card">
+      <h2>Your sheet</h2>
       <div class="chips" id="tabChips" role="group" aria-label="Sheet tabs"></div>
       <div class="legend small muted"><span><span class="sw"></span>Your inputs: tap to change</span><span>Everything else is worked out by the sheet</span></div>
     </div>
@@ -368,7 +384,7 @@ footer{text-align:center}
     flexWords: "food, fuel and spending",
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.3.1";
+  const APP_VERSION = "1.4.0";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -388,8 +404,8 @@ footer{text-align:center}
 
   // ---------- local state ----------
   function load() {
-    try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && typeof s === "object") return Object.assign({cfg: null, snap: null, queue: [], ticks: {}, lastSync: 0}, s); } catch (e) {}
-    return {cfg: null, snap: null, queue: [], ticks: {}, lastSync: 0};
+    try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s && typeof s === "object") return Object.assign({cfg: null, snap: null, queue: [], ticks: {}, done: {}, lastSync: 0}, s); } catch (e) {}
+    return {cfg: null, snap: null, queue: [], ticks: {}, done: {}, lastSync: 0};
   }
   let st = load();
   function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { showErr("This phone isn't letting the app save. Open it from the home screen icon."); } }
@@ -537,6 +553,7 @@ footer{text-align:center}
     renderMonth(m, p, lines, daysLeft, totalDays, dayNo);
     renderAlerts(m, idx, p, lines, ex, daysLeft, today);
     renderTodayTiles(m, p, lines, daysLeft);
+    renderTodo(m, p, today);
     renderComing(today);
     renderTrends(m, ex, idx);
     renderGlance();
@@ -641,6 +658,54 @@ footer{text-align:center}
     $("todayCard").hidden = !box.children.length;
   }
 
+  // ---------- to do: plan items due today or earlier, pot moves, sorting your pay ----------
+  const planKey = (date, what) => "plan|" + date + "|" + String(what).trim();
+  const isDone = k => !!(st.done && st.done[k]);
+  function setDone(k, v) {
+    st.done = st.done || {};
+    if (v) st.done[k] = v; else delete st.done[k];
+    const ks = Object.keys(st.done); if (ks.length > 200) ks.slice(0, ks.length - 200).forEach(x => delete st.done[x]);
+    save();
+  }
+  function tipKey(t, start) { return "tip|" + iso(start) + "|" + t.from + "|" + t.to; }
+  function openTips(pm) { return pm ? pm.tips.map(t => ({t, key: tipKey(t, pm.cur.start), left: t.amount - (num(st.done?.[tipKey(t, pm.cur.start)]) || 0)})).filter(x => x.left > 0.004) : []; }
+  function todoItems(m, p, today) {
+    const items = [], tIso = iso(today);
+    const name = Object.keys(st.snap.tabs || {}).find(n => /^next/i.test(n));
+    const t = name && tab(name);
+    if (t) {
+      const h = t.v.findIndex(r => String(r[0]).trim() === "Date" && String(r[1]).trim() === "What");
+      if (h >= 0) for (let r = h + 1; r < t.v.length; r++) {
+        const d = t.v[r][0]; if (!isIso(d) || d > tIso) continue;
+        const inn = num(t.v[r][2]), out = num(t.v[r][3]);
+        if (!(inn > 0) && !(out > 0)) continue;
+        const key = planKey(d, t.d[r][1]); if (isDone(key)) continue;
+        items.push({key, what: t.d[r][1], sub: d === tIso ? "Today" : nice(parseIso(d)), amount: inn > 0 ? "+" + fmt(inn) : "−" + fmt(out), good: inn > 0, val: true});
+      }
+    }
+    // payday: sort the pay into pots
+    if (dayDiff(p.start, today) >= 0 && dayDiff(p.start, today) <= 4 && p.name !== "Now") {
+      const plan = potPlan(m, p), ticks = st.ticks["pay-" + iso(p.start)] || {};
+      const left = plan.list.filter(x => x.pot !== "Main account" && !ticks[x.pot]);
+      const key = "pay|" + iso(p.start);
+      if (left.length && !isDone(key)) items.push({key, what: "Sort your pay into pots", sub: left.length + " pot" + (left.length === 1 ? "" : "s") + " still to move", amount: "", action: "pay", val: true});
+    }
+    openTips(potModel()).forEach(x => items.push({key: x.key, what: "Move from " + x.t.from + " to " + x.t.to, sub: "You paid for " + [...x.t.what].join(" and ") + " from " + x.t.to, amount: fmt(x.left), action: "pots", val: round2(x.t.amount)}));
+    return items;
+  }
+  function renderTodo(m, p, today) {
+    const items = todoItems(m, p, today), ul = $("todo"); ul.innerHTML = "";
+    items.forEach(it => {
+      const li = document.createElement("li");
+      li.innerHTML = `<input type="checkbox" aria-label="Done: ${esc(it.what)}"><span style="min-width:0"><span class="what">${esc(it.what)}</span><br><span class="small muted">${esc(it.sub)}</span>${it.action ? ` · <button class="link" type="button">${it.action === "pay" ? "Open Payday" : "See pots"}</button>` : ""}</span><span class="num"${it.good ? ' style="color:var(--good)"' : ""}>${esc(it.amount)}</span>`;
+      li.querySelector("input").addEventListener("change", e => { if (!e.target.checked) return; li.classList.add("gone"); setDone(it.key, it.val); setTimeout(render, 260); });
+      const b = li.querySelector("button.link"); if (b) b.addEventListener("click", () => show(it.action));
+      ul.appendChild(li);
+    });
+    $("todoCount").textContent = items.length ? items.length + " left" : "";
+    $("todoCard").hidden = !items.length;
+  }
+
   function renderComing(today) {
     const name = Object.keys(st.snap.tabs || {}).find(n => /^next/i.test(n));
     const t = name && tab(name); const ul = $("coming"); ul.innerHTML = "";
@@ -652,6 +717,7 @@ footer{text-align:center}
           const d = t.v[r][0]; if (!isIso(d) || d < from || d > to) continue;
           const inn = num(t.v[r][2]), out = num(t.v[r][3]);
           if (!(inn > 0) && !(out > 0)) continue;
+          if (isDone(planKey(d, t.d[r][1]))) continue;
           const li = document.createElement("li");
           li.innerHTML = `<span><span class="what">${esc(t.d[r][1])}</span><br><span class="small muted">${nice(parseIso(d))}</span></span><span class="num" style="color:${inn > 0 ? "var(--good)" : "var(--ink)"}">${inn > 0 ? "+" + fmt(inn) : "−" + fmt(out)}</span>`;
           ul.appendChild(li);
@@ -1036,8 +1102,14 @@ footer{text-align:center}
     if (allToday) { const act = checked.reduce((x, p) => x + num(p.actual), 0), d = act - pm.total; nt.hidden = false; nt.className = "note" + (Math.abs(d) < 1 ? " ok" : (d < 0 ? " bad" : "")); nt.textContent = "Your banking app shows " + fmt(act) + " in total today. " + (Math.abs(d) < 1 ? "That matches the plan." : (d > 0 ? "That's " + fmt(d) + " more than planned: something may not be logged as spent yet, or money came in that isn't in the plan." : "That's " + fmt(-d) + " less than planned: check for payments that haven't been logged in the app.")); }
     else nt.hidden = true;
     const tl = $("potTips"); tl.innerHTML = "";
-    pm.tips.forEach(t => { const li = document.createElement("li"); li.innerHTML = `<span style="min-width:0">Move from <b>${esc(t.from)}</b> to <b>${esc(t.to)}</b><br><span class="small muted">You paid for ${esc([...t.what].join(" and "))} from ${esc(t.to)}.</span></span><span class="num">${fmt(t.amount)}</span>`; tl.appendChild(li); });
-    $("potTipsCard").hidden = !pm.tips.length;
+    const open = openTips(pm);
+    open.forEach(({t, key, left}) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<input type="checkbox" aria-label="Done: move from ${esc(t.from)} to ${esc(t.to)}"><span style="min-width:0">Move from <b>${esc(t.from)}</b> to <b>${esc(t.to)}</b><br><span class="small muted">You paid for ${esc([...t.what].join(" and "))} from ${esc(t.to)}.</span></span><span class="num">${fmt(left)}</span>`;
+      li.querySelector("input").addEventListener("change", e => { if (!e.target.checked) return; li.classList.add("gone"); setDone(key, round2(t.amount)); setTimeout(render, 260); });
+      tl.appendChild(li);
+    });
+    $("potTipsCard").hidden = !open.length;
     pm.pots.forEach(p => {
       const d = document.createElement("div"); d.className = "card potc";
       let act = "";
@@ -1189,7 +1261,7 @@ footer{text-align:center}
   $("disconnectBtn").addEventListener("click", ev => {
     const b = ev.currentTarget;
     if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Tap again to disconnect"; setTimeout(() => { b.dataset.armed = ""; b.textContent = "Disconnect"; }, 3000); return; }
-    st = {cfg: null, snap: null, queue: st.queue, ticks: st.ticks, lastSync: 0, view: st.view}; save(); render();
+    st = {cfg: null, snap: null, queue: st.queue, ticks: st.ticks, done: st.done, lastSync: 0, view: st.view}; save(); render();
   });
 
   // ---------- tabs ----------
@@ -1201,14 +1273,16 @@ footer{text-align:center}
     const isView = VIEWS.includes(name);
     if (isView) { view = name; if (st.view !== name) { st.view = name; save(); } }
     PANELS.forEach(t => { $("p-" + t).hidden = t !== name; });
-    ["view", "add", "pay", "pots", "sheet"].forEach(t => $("tab-" + t).setAttribute("aria-selected", String(t === (isView ? "view" : name))));
+    ["view", "add", "pay", "pots"].forEach(t => $("tab-" + t).setAttribute("aria-selected", String(t === (isView ? "view" : name))));
+    $("tab-sheet").setAttribute("aria-pressed", String(name === "sheet"));
     $("tab-view").setAttribute("aria-controls", "p-" + view);
     $("viewName").textContent = VIEW_NAMES[view];
     $("viewSeg").hidden = !isView;
     document.querySelectorAll("#viewSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === view)));
     window.scrollTo(0, 0);
   }
-  ["view", "add", "pay", "pots", "sheet"].forEach(t => $("tab-" + t).addEventListener("click", () => show(t)));
+  ["view", "add", "pay", "pots"].forEach(t => $("tab-" + t).addEventListener("click", () => show(t)));
+  $("tab-sheet").addEventListener("click", () => show($("p-sheet").hidden ? "sheet" : "view"));
   document.querySelectorAll("#viewSeg button").forEach(b => b.addEventListener("click", () => show(b.dataset.v)));
   show(view);
 
