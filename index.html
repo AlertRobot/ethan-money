@@ -51,8 +51,8 @@ p{margin:0}
 .sync{font:inherit;font-size:.85rem;border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;padding:6px 12px;cursor:pointer;min-height:36px;white-space:nowrap}
 .sync.warn{color:var(--warn);border-color:var(--warn)}
 .sync.bad{color:var(--bad);border-color:var(--bad)}
-.tabs{position:sticky;top:0;z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-block:8px;padding-top:calc(env(safe-area-inset-top,0px) + 6px);margin-top:calc(-1 * env(safe-area-inset-top,0px))}
-.tabs button{font:inherit;font-weight:700;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:12px 2px;cursor:pointer;min-height:46px}
+.tabs{position:sticky;top:0;z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding-block:8px;padding-top:calc(env(safe-area-inset-top,0px) + 6px);margin-top:calc(-1 * env(safe-area-inset-top,0px))}
+.tabs button{font:inherit;font-size:.9rem;font-weight:700;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:12px 0;cursor:pointer;min-height:46px;min-width:0}
 .tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
 .big{font-family:var(--display);font-size:1.9rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
@@ -73,6 +73,10 @@ p{margin:0}
 .list li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
 .list li:first-child{border-top:0}
 .list li.chk{grid-template-columns:auto 1fr auto}
+.list.alerts li{grid-template-columns:auto 1fr;align-items:start}
+.al .dot{width:10px;height:10px;border-radius:50%;margin-top:7px;background:var(--warn)}
+.al.bad .dot{background:var(--bad)}
+.al.ok .dot{background:var(--good)}
 .list input[type=checkbox]{width:26px;height:26px;accent-color:var(--accent);margin:0}
 .what{font-weight:700;overflow-wrap:anywhere}
 .done .what{text-decoration:line-through;color:var(--muted)}
@@ -135,6 +139,7 @@ footer{text-align:center}
 
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button role="tab" id="tab-today" aria-selected="true" aria-controls="p-today">Today</button>
+    <button role="tab" id="tab-month" aria-selected="false" aria-controls="p-month">Month</button>
     <button role="tab" id="tab-add" aria-selected="false" aria-controls="p-add">Add</button>
     <button role="tab" id="tab-pay" aria-selected="false" aria-controls="p-pay">Payday</button>
     <button role="tab" id="tab-sheet" aria-selected="false" aria-controls="p-sheet">Sheet</button>
@@ -160,6 +165,41 @@ footer{text-align:center}
       <div class="row"><h2 id="pName">This pay period</h2><span class="big" id="pDays">–</span></div>
       <p class="muted" id="pInfo">Loading…</p>
       <p class="note" id="pWarn" hidden></p>
+    </div>
+
+    <div class="card">
+      <h2>Heads up</h2>
+      <ul class="list alerts" id="alerts"></ul>
+    </div>
+
+    <div class="card" id="todayCard" hidden>
+      <h2>You can spend today</h2>
+      <div class="tiles" id="todayTiles"></div>
+      <p class="small muted">These budgets build up a little every day, so a big spend early on shows as "ahead" until the days catch up. Anything you don't spend keeps building, ready for something bigger.</p>
+    </div>
+
+    <div class="card" id="comingCard" hidden>
+      <h2>Coming up this week</h2>
+      <ul class="list" id="coming"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Trends</h2>
+      <ul class="list" id="trendListT"></ul>
+      <p class="small muted" id="trendNoteT"></p>
+    </div>
+
+    <div class="card">
+      <h2>At a glance</h2>
+      <ul class="list" id="glanceT"></ul>
+    </div>
+  </section>
+
+  <!-- MONTH -->
+  <section id="p-month" role="tabpanel" aria-labelledby="tab-month" hidden style="display:grid;gap:14px">
+    <div class="card">
+      <div class="row"><h2 id="mName">This pay period</h2><span class="muted small" id="mDay"></span></div>
+      <p class="muted" id="mInfo"></p>
     </div>
 
     <div class="card">
@@ -272,10 +312,11 @@ footer{text-align:center}
     name: "Ethan's money", key: "ethanMoney.v1", bank: "Monzo",
     flex: /food|fuel|entertain|gift|household|christmas/i,   // day-to-day budgets shown as tiles
     pace: /food|entertain/i,                                  // steady spending that gets a pace forecast
+    drip: /food|entertain/i,                                  // budgets that build up a little each day
     flexWords: "food, fuel and spending",
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.1.1";
+  const APP_VERSION = "1.2.0";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -290,6 +331,7 @@ footer{text-align:center}
   const todayDate = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
   const dayDiff = (a, b) => Math.round((b - a) / 86400000);
   const FLEX_RE = CONFIG.flex;
+  const DRIP_RE = CONFIG.drip;
   const PACE_RE = CONFIG.pace; // steady day-to-day spending; fuel and one-offs come in lumps, so no pace forecast
 
   // ---------- local state ----------
@@ -418,44 +460,62 @@ footer{text-align:center}
     const {idx, note, today} = currentPeriod(m); const p = m.periods[idx];
     const daysLeft = Math.max(0, dayDiff(today, p.next));
     const totalDays = Math.max(1, dayDiff(p.start, p.next));
-    const elapsed = Math.min(totalDays, Math.max(1, dayDiff(p.start, today) + 1));
-    $("pName").textContent = p.name === "Now" ? "Until payday" : p.name + " pay period";
+    const dayNo = Math.min(totalDays, Math.max(1, dayDiff(p.start, today) + 1));
+    const name = p.name === "Now" ? "Until payday" : p.name + " pay period";
+    $("pName").textContent = name;
     $("pDays").textContent = daysLeft === 1 ? "1 day" : daysLeft + " days";
-    $("pInfo").textContent = nice(p.start) + " to " + nice(new Date(p.next.getFullYear(), p.next.getMonth(), p.next.getDate() - 1)) + " · next payday " + nice(p.next);
+    $("pInfo").textContent = daysLeft === 0 ? "Payday is today." : "Next payday " + nice(p.next) + ".";
     $("pWarn").textContent = note; $("pWarn").hidden = !note;
+    $("mName").textContent = name; $("mDay").textContent = "Day " + dayNo + " of " + totalDays;
+    $("mInfo").textContent = nice(p.start) + " to " + nice(new Date(p.next.getFullYear(), p.next.getMonth(), p.next.getDate() - 1)) + " · next payday " + nice(p.next);
 
     const ex = allExpenses();
+    const lines = m.spending.map(line => {
+      const budget = cellNum(m.t, line.row, p.col), sp = spent(ex, line.label, p.start, p.next);
+      const o = {line, label: line.label, budget, sp, left: budget - sp, flex: FLEX_RE.test(line.label), pace: PACE_RE.test(line.label), drip: DRIP_RE.test(line.label) && budget > 0};
+      if (o.drip) {
+        o.daily = budget / totalDays;
+        let carry = 0;
+        for (let k = 0; k < idx; k++) { const q = m.periods[k]; carry += cellNum(m.t, line.row, q.col) - spent(ex, line.label, q.start, q.next); }
+        o.carry = carry; o.earned = o.daily * dayNo; o.avail = o.earned + carry - sp;
+      }
+      if (o.pace && budget > 0 && !(dayNo < 4 && totalDays > 10)) o.projected = sp + sp / dayNo * Math.max(0, daysLeft - 1);
+      return o;
+    });
+    renderMonth(m, p, lines, daysLeft, totalDays, dayNo);
+    renderAlerts(m, idx, p, lines, ex, daysLeft, today);
+    renderTodayTiles(m, p, lines);
+    renderComing(today);
+    renderTrends(m, ex, idx);
+    renderGlance();
+  }
+
+  function renderMonth(m, p, lines, daysLeft, totalDays, dayNo) {
     const tiles = $("tiles"); tiles.innerHTML = "";
-    let flexLeft = 0, flexBudget = 0;
     const fixed = $("fixedList"); fixed.innerHTML = "";
-    m.spending.forEach(line => {
-      const budget = cellNum(m.t, line.row, p.col);
-      const sp = spent(ex, line.label, p.start, p.next);
-      const left = budget - sp;
-      if (FLEX_RE.test(line.label)) {
-        if (!(budget > 0) && !(sp > 0)) return;
-        flexLeft += left; flexBudget += budget;
+    let flexLeft = 0;
+    lines.forEach(o => {
+      const {line, budget, sp, left} = o;
+      if (!(budget > 0) && !(sp > 0)) return;
+      if (o.flex) {
+        flexLeft += left;
         const perDay = daysLeft > 0 ? left / daysLeft : left;
-        const remainingAfterToday = Math.max(0, daysLeft - 1);
-        const pace = sp / elapsed;
-        const projected = sp + pace * remainingAfterToday;
-        const early = (elapsed < 4 && totalDays > 10) || !PACE_RE.test(line.label);
-        const expected = budget * elapsed / totalDays;
-        const cls = left < 0 ? " over" : (!early && projected > budget * 1.05 && budget > 0 ? " warn" : "");
+        const expected = budget * dayNo / totalDays;
+        const cls = left < 0 ? " over" : (o.projected !== undefined && o.projected > budget * 1.05 ? " warn" : (o.drip && o.avail < 0 ? " warn" : ""));
         const pct = budget > 0 ? Math.min(100, sp / budget * 100) : (sp > 0 ? 100 : 0);
         const mark = budget > 0 ? Math.min(100, expected / budget * 100) : 0;
         let trend = "";
         if (left < 0) trend = "Over by " + fmt(-left);
-        else if (!PACE_RE.test(line.label) && !/fuel/i.test(line.label)) trend = left <= 0.004 ? "All used" : fmt(left) + " left";
-        else if (early) trend = budget > 0 ? (daysLeft > 0 ? fmt(perDay) + " a day left" : fmt(left) + " left") : "No budget this period";
-        else if (budget > 0 && projected > budget * 1.05) trend = "At this pace ~" + fmt0(projected) + ", over by " + fmt0(projected - budget);
+        else if (o.drip) trend = (o.avail >= 0 ? fmt(o.avail) + " available today" : fmt(-o.avail) + " ahead of today's allowance");
+        else if (!o.pace && !/fuel/i.test(line.label)) trend = left <= 0.004 ? "All used" : fmt(left) + " left";
+        else if (o.projected === undefined) trend = budget > 0 ? (daysLeft > 0 ? fmt(perDay) + " a day left" : fmt(left) + " left") : "No budget this period";
+        else if (o.projected > budget * 1.05) trend = "At this pace ~" + fmt0(o.projected) + ", over by " + fmt0(o.projected - budget);
         else trend = fmt(perDay) + " a day · on track";
         const b = document.createElement("button"); b.type = "button"; b.className = "tile" + cls;
         b.innerHTML = `<span class="lbl">${esc(short(line.label))}</span><span class="big">${fmt(left)}</span><div class="bar${left < 0 ? " over" : ""}"><span style="width:${pct}%"></span>${budget > 0 ? `<i style="left:${mark}%"></i>` : ""}</div><span class="small muted">${fmt(sp)} of ${fmt(budget)}</span><span class="small">${esc(trend)}</span>`;
         b.addEventListener("click", () => openBudgetCell(m, line, p));
         tiles.appendChild(b);
       } else {
-        if (!(budget > 0) && !(sp > 0)) return;
         const li = document.createElement("li");
         li.innerHTML = `<span><span class="what">${esc(line.label)}</span><br><span class="small muted">${sp > 0 ? fmt(sp) + " logged" : "Set aside on payday"}</span></span><button class="iconbtn num" type="button" style="color:var(--ink)">${fmt(budget)}</button>`;
         li.querySelector("button").addEventListener("click", () => openBudgetCell(m, line, p));
@@ -472,9 +532,60 @@ footer{text-align:center}
     if (!fixed.children.length) fixed.innerHTML = '<li><span class="muted">Nothing set aside this period.</span><span></span></li>';
     $("flexLeft").textContent = fmt(flexLeft); $("flexLeft").style.color = flexLeft < 0 ? "var(--bad)" : "";
     $("flexInfo").textContent = daysLeft > 0 ? "About " + fmt(flexLeft / daysLeft) + " a day across " + CONFIG.flexWords + " until payday." : "Payday is today.";
+  }
 
-    renderTrends(m, ex, idx);
-    renderGlance();
+  function renderAlerts(m, idx, p, lines, ex, daysLeft, today) {
+    const out = [];
+    lines.forEach(o => {
+      if (!(o.budget > 0) && !(o.sp > 0)) return;
+      const n = short(o.label);
+      if (o.left < -0.004) out.push(["bad", n + ": over this month's budget by " + fmt(-o.left) + "."]);
+      else if (o.drip && o.avail < -0.004) { const d = Math.ceil(-o.avail / o.daily); out.push(["warn", n + ": " + fmt(-o.avail) + " ahead of your allowance. It catches up in " + d + (d === 1 ? " day." : " days.")]); }
+      else if (o.projected !== undefined && o.projected > o.budget * 1.05) out.push(["warn", n + ": at this pace about " + fmt0(o.projected) + " by payday, " + fmt0(o.projected - o.budget) + " over."]);
+    });
+    const real = ex.filter(e => !e.pending || true);
+    const last = real.length ? parseIso(real[0].date) : null;
+    const planDays = dayDiff(m.periods[0].start, today);
+    if (last ? dayDiff(last, today) >= 3 : planDays >= 2) out.push(["warn", last ? "Nothing logged since " + nice(last) + ". Add anything you've spent so the numbers stay right." : "Nothing logged yet. Add what you've spent so far."]);
+    if (st.queue.length) out.push(["warn", st.queue.length + (st.queue.length === 1 ? " change is" : " changes are") + " waiting to sync. Open the app with signal to send them."]);
+    if (daysLeft <= 2 && idx + 1 < m.periods.length) out.push(["ok", (daysLeft === 0 ? "Payday is today" : daysLeft === 1 ? "Payday is tomorrow" : "Payday is on " + nice(p.next)) + ". The Payday tab shows what to move where."]);
+    if (idx >= m.periods.length - 1 && daysLeft <= 14) out.push(["warn", "The Budget tab runs out after this pay period. Add next month's column to keep tracking."]);
+    const ul = $("alerts"); ul.innerHTML = "";
+    if (!out.length) out.push(["ok", "Everything's on track. Nothing needs your attention today."]);
+    out.forEach(([lvl, t]) => { const li = document.createElement("li"); li.className = "al " + lvl; li.innerHTML = `<span class="dot" aria-hidden="true"></span><span>${esc(t)}</span>`; ul.appendChild(li); });
+  }
+
+  function renderTodayTiles(m, p, lines) {
+    const box = $("todayTiles"); box.innerHTML = "";
+    lines.filter(o => o.drip).forEach(o => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "tile" + (o.avail < 0 ? " warn" : "");
+      const carry = Math.abs(o.carry) >= 0.5 ? `<span class="small muted">${o.carry > 0 ? "Includes " + fmt(o.carry) + " saved from earlier months" : "Includes " + fmt(-o.carry) + " overspent earlier"}</span>` : "";
+      b.innerHTML = `<span class="lbl">${esc(short(o.label))}</span><span class="big">${fmt(o.avail)}</span><span class="small">${o.avail >= 0 ? "available today" : "ahead of your allowance"}</span><span class="small muted">+${fmt(o.daily)} each day · ${fmt(o.sp)} of ${fmt(o.budget)} spent</span>${carry}`;
+      b.addEventListener("click", () => openBudgetCell(m, o.line, p));
+      box.appendChild(b);
+    });
+    $("todayCard").hidden = !box.children.length;
+  }
+
+  function renderComing(today) {
+    const name = Object.keys(st.snap.tabs || {}).find(n => /^next/i.test(n));
+    const t = name && tab(name); const ul = $("coming"); ul.innerHTML = "";
+    if (t) {
+      const h = t.v.findIndex(r => String(r[0]).trim() === "Date" && String(r[1]).trim() === "What");
+      if (h >= 0) {
+        const from = iso(today), to = iso(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7));
+        for (let r = h + 1; r < t.v.length; r++) {
+          const d = t.v[r][0]; if (!isIso(d) || d < from || d > to) continue;
+          const inn = num(t.v[r][2]), out = num(t.v[r][3]);
+          if (!(inn > 0) && !(out > 0)) continue;
+          const li = document.createElement("li");
+          li.innerHTML = `<span><span class="what">${esc(t.d[r][1])}</span><br><span class="small muted">${nice(parseIso(d))}</span></span><span class="num" style="color:${inn > 0 ? "var(--good)" : "var(--ink)"}">${inn > 0 ? "+" + fmt(inn) : "−" + fmt(out)}</span>`;
+          ul.appendChild(li);
+          if (ul.children.length >= 8) break;
+        }
+      }
+    }
+    $("comingCard").hidden = !ul.children.length;
   }
   const short = s => String(s).replace(" & groceries", "").replace("Entertainment & spending", "Entertainment").replace("Household one-offs", "Household").replace("Gifts & birthdays", "Gifts");
 
@@ -504,9 +615,11 @@ footer{text-align:center}
       ul.appendChild(li); shown++;
     });
     $("trendNote").textContent = shown ? (histDays >= 14 ? "Based on " + histDays + " days of logged payments before this pay period." : "") : "Trends show once you've logged a full pay month, or imported older " + CONFIG.bank + " payments (Add tab, tick 'Include payments from before the plan').";
+    $("trendListT").innerHTML = ul.innerHTML; $("trendNoteT").textContent = $("trendNote").textContent;
   }
 
-  function renderGlance() {
+  function renderGlance() { renderGlanceInto(); $("glanceT").innerHTML = $("glance").innerHTML; }
+  function renderGlanceInto() {
     const ul = $("glance"); ul.innerHTML = "";
     const add = (label, value, sub) => { const li = document.createElement("li"); li.innerHTML = `<span><span class="what">${esc(label)}</span>${sub ? `<br><span class="small muted">${esc(sub)}</span>` : ""}</span><span class="num">${esc(value)}</span>`; ul.appendChild(li); };
     const tm = tab("This month");
@@ -841,7 +954,7 @@ footer{text-align:center}
   });
 
   // ---------- tabs ----------
-  const TABS = ["today", "add", "pay", "sheet"];
+  const TABS = ["today", "month", "add", "pay", "sheet"];
   function show(name) { TABS.forEach(t => { $("tab-" + t).setAttribute("aria-selected", String(t === name)); $("p-" + t).hidden = t !== name; }); window.scrollTo(0, 0); }
   TABS.forEach(t => $("tab-" + t).addEventListener("click", () => show(t)));
 

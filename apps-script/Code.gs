@@ -1,5 +1,5 @@
 /**
- * Ethan's Money: link between the phone app and the "E&S Budgie" Google Sheet.
+ * Ethan's Money: link between the phone app and the "Ethan Budgie" Google Sheet.
  *
  * Setup (once):
  *   1. Open script.google.com, New project (or Extensions > Apps Script in the sheet). Paste this file into Code.gs. Save.
@@ -16,7 +16,12 @@
 var WEB_APP_URL = ""; // optional: paste the /exec URL here, then run connectLink()
 var APP_URL = "https://alertrobot.github.io/ethan-money/";
 
-var TABS = ["This month", "Budget", "Personal bills", "Car costs", "Savings growth", "Sophie", "Christmas", "App settings"];
+var TABS = null; // every visible tab except the Expense log (worked out when needed)
+function tabs_() {
+  if (TABS) return TABS;
+  TABS = ss_().getSheets().filter(function (s) { return !s.isSheetHidden() && s.getName() !== LOG_TAB && !/^Original/.test(s.getName()); }).map(function (s) { return s.getName(); });
+  return TABS;
+}
 var LOG_TAB = "Expense log";
 var LOG_FIRST_ROW = 5;
 var BLUE = "#0000ff";
@@ -91,7 +96,7 @@ function checkKey_(k) {
 }
 
 // ---------- reading ----------
-var SHEET_ID = "1D8Ql3fJuhXVXzcdlxs-eAd5e1f6AiaKwVd4hNRb24OM"; // E&S Budgie
+var SHEET_ID = "1D8Ql3fJuhXVXzcdlxs-eAd5e1f6AiaKwVd4hNRb24OM"; // Ethan Budgie
 var ss_cache_ = null;
 function ss_() {
   if (ss_cache_) return ss_cache_;
@@ -112,7 +117,7 @@ function cellOut_(v, fmt) {
 function snapshot_() {
   var ss = ss_();
   var tabs = {};
-  TABS.forEach(function (name) {
+  tabs_().forEach(function (name) {
     var sh = ss.getSheetByName(name);
     if (sh) tabs[name] = readTab_(sh);
   });
@@ -201,9 +206,9 @@ function readLog_() {
 
 // ---------- writing ----------
 function parseDate_(s) {
+  // Written as text like "2026-11-27" so the sheet stores a whole-day date in its own time zone.
   var m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return null;
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+  return m ? m[0] : null;
 }
 
 function addExpenses_(list) {
@@ -231,7 +236,7 @@ function addExpenses_(list) {
   list.forEach(function (x) {
     var id = String(x.id || "").slice(0, 80);
     if (id && ids[id]) { skipped++; return; }
-    var d = parseDate_(x.date) || new Date();
+    var d = parseDate_(x.date) || Utilities.formatDate(new Date(), tz_(), "yyyy-MM-dd");
     var amount = Math.round(Number(x.amount) * 100) / 100;
     if (!(amount > 0)) { skipped++; return; }
     var idx = findFree();
@@ -265,7 +270,7 @@ function deleteExpense_(b) {
 }
 
 function setCell_(b) {
-  if (TABS.indexOf(b.tab) < 0) throw new Error("That tab can't be changed from the app.");
+  if (tabs_().indexOf(b.tab) < 0) throw new Error("That tab can't be changed from the app.");
   var sh = ss_().getSheetByName(b.tab);
   var r = Number(b.row) + 1, c = Number(b.col) + 1;
   if (!(r >= 1 && c >= 1)) throw new Error("Bad cell");
