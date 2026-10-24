@@ -384,7 +384,7 @@ footer{text-align:center}
     flexWords: "food, fuel and spending",
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.4.0";
+  const APP_VERSION = "1.4.1";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1048,6 +1048,20 @@ footer{text-align:center}
       [...m.spending, ...m.saving].forEach(line => {
         const B = cellNum(m.t, line.row, pk.col);
         const w = when[line.label] || (FLEX_RE.test(line.label) ? "as you spend" : "payday");
+        if (line.label === "Personal bills" && /per bill/.test(w) && pb) {
+          const h = findRow(pb, "Bill"), c = h >= 0 ? pb.v[h].findIndex(x => String(x).trim() === pk.name) : -1, end = findRowStarts(pb, "Total", h + 1);
+          if (c > 0) {
+            for (let r = h + 1; r < (end < 0 ? pb.v.length : end); r++) {
+              const bill = String(pb.v[r][0] || "").trim(), amt = cellNum(pb, r, c); if (!bill || !(amt > 0)) continue;
+              const pot = /main/i.test(String(pb.v[r][1])) ? MAIN : potOf(line.label);
+              if (skip(pot, k)) continue;
+              const due = whenDue(pb.d[r][2], pk.start);
+              if (due) { if (today < due) add(pot, bill, {amount: amt, kind: "due", note: "goes out " + nice(due)}); }
+              else { const left = Math.max(0, dayDiff(today, pk.next)); const keep = amt * Math.min(1, left / tdays); if (keep > 0.004) add(pot, bill, {amount: keep, kind: "spread", note: "goes out bit by bit through the month"}); }
+            }
+            return;
+          }
+        }
         const portions = (line.label === "Personal bills" && pbPot !== null) ? [[potOf(line.label), pbPot, " (from the pot)"], [MAIN, pbMain, " (from main)"]] : [[potOf(line.label), B, ""]];
         portions.forEach(([pot, amt, suffix], pi) => {
           if (skip(pot, k)) return;
@@ -1070,6 +1084,33 @@ footer{text-align:center}
         });
       });
     }
+    // Pot timing tab: money that arrives from elsewhere or one-offs, each counted only between its From and Until
+    const pt = tab("Pot timing");
+    if (pt) {
+      const h = findRow(pt, "What");
+      if (h >= 0) for (let r = h + 1; r < pt.v.length; r++) {
+        const what = String(pt.v[r][0] || "").trim(), amt = num(pt.v[r][2]); if (!what || !amt) continue;
+        const pot = findPot(String(pt.v[r][1] || "").trim()) || MAIN; if (lNames.has(pot) || whole) continue;
+        const f = pt.v[r][3], u = pt.v[r][4];
+        const isDay = x => typeof x === "number" ? x >= 1 && x <= 31 : /^\d{1,2}$/.test(String(x).trim());
+        let active = false, amount = amt, note = "";
+        if (isDay(f)) {
+          const F = Number(f); let st0 = dueOn(new Date(today.getFullYear(), today.getMonth(), 1), F);
+          if (st0 > today) st0 = dueOn(new Date(today.getFullYear(), today.getMonth() - 1, 1), F);
+          const s0 = pt.v[r][5]; if (isIso(s0) && st0 < parseIso(s0)) continue;
+          const after = new Date(st0.getFullYear(), st0.getMonth(), st0.getDate() + 1);
+          if (isDay(u)) { const end = dueOn(after, Number(u)); active = today < end; note = "until " + nice(end); }
+          else if (/spread/i.test(String(u))) { const end = dueOn(after, F); const left = Math.max(0, dayDiff(today, end)), tot = Math.max(1, dayDiff(st0, end)); amount = amt * left / tot; active = amount > 0.004; note = "goes out bit by bit until " + nice(end); }
+          else { active = true; }
+          if (active && m.periods[0] && today < m.periods[0].start) active = false;
+        } else {
+          const fd = isIso(f) ? parseIso(f) : null, ud = isIso(u) ? parseIso(u) : null;
+          active = (!fd || fd <= today) && (!ud || today < ud);
+          note = ud ? "until " + nice(ud) : (fd ? "from " + nice(fd) : "");
+        }
+        if (active) add(pot, what, {amount, kind: "timing", note});
+      }
+    }
     // money that's already sitting in a pot before the next period starts (e.g. the Bills pot balance)
     const nextP = m.periods[idx + 1]; const already = m.moneyIn.find(l => /already in/i.test(l.label));
     if (nextP && already) { const a = cellNum(m.t, already.row, nextP.col); const bp = findPot(map["Rent"] || "Bills"); if (a > 0 && bp && !skip(bp, idx)) add(bp, "Already in the pot for next month", {amount: a, kind: "due", note: "counted in your " + nextP.name + " plan"}); }
@@ -1082,7 +1123,15 @@ footer{text-align:center}
     });
     const cur = m.periods[idx];
     const extras = m.moneyIn.filter(l => !/already in|^pay/i.test(l.label)).map(l => ({label: l.label, amount: cellNum(m.t, l.row, cur.col)})).filter(x => x.amount > 0);
-    return {pots, P, total: pots.reduce((x, p) => x + p.should, 0), tips: [...tips.values()].filter(t => t.amount > 0.004), today, extras, lActive, cur};
+    return {pots, P, timing: !!tab("Pot timing"), total: pots.reduce((x, p) => x + p.should, 0), tips: [...tips.values()].filter(t => t.amount > 0.004), today, extras, lActive, cur};
+  }
+  // "15th", "1 Dec, 27 Jan", "Varies": a day of the month, the first listed date on or after the start, or null (spread)
+  function whenDue(txt, start) {
+    const s = String(txt || ""), MON = {jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11};
+    let best = null; const re = /(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3})/g; let mm;
+    while ((mm = re.exec(s))) { const mo = MON[mm[2].toLowerCase()]; if (mo === undefined) continue; [start.getFullYear(), start.getFullYear() + 1].forEach(y => { const d = new Date(y, mo, Number(mm[1])); if (d >= start && (!best || d < best)) best = d; }); }
+    if (best) return best;
+    const n = s.match(/\d{1,2}/); return n ? dueOn(start, Number(n[0])) : null;
   }
   function dueOn(start, D) {
     const mk = (y, mo) => new Date(y, mo, Math.min(D, new Date(y, mo + 1, 0).getDate()));
@@ -1094,7 +1143,7 @@ footer{text-align:center}
     const pm = potModel(); const list = $("potList"); list.innerHTML = "";
     if (!pm) { $("potInfo").textContent = "Couldn't read the Budget tab."; return; }
     $("potTotal").textContent = fmt(pm.total);
-    $("potInfo").textContent = "Across your main account and pots on " + nice(pm.today) + ", if everything has gone to plan." + (pm.extras.length && pm.cur.name === "Now" && !pm.lActive.some(p => /whole/i.test(p.how)) ? " This counts money that may not have arrived yet: " + pm.extras.map(x => x.label + " " + fmt(x.amount)).join(", ") + "." : "");
+    $("potInfo").textContent = "Across your main account and pots on " + nice(pm.today) + ", if everything has gone to plan." + (pm.extras.length && pm.cur.name === "Now" && !pm.timing && !pm.lActive.some(p => /whole/i.test(p.how)) ? " This counts money that may not have arrived yet: " + pm.extras.map(x => x.label + " " + fmt(x.amount)).join(", ") + "." : "");
     const tIso = iso(pm.today);
     const checked = pm.pots.filter(p => isIso(p.checked) && p.checked === tIso && p.actual !== "");
     const allToday = checked.length && checked.length === pm.pots.filter(p => p.editable).length;
