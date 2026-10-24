@@ -387,7 +387,7 @@ footer{text-align:center}
     pot: "pot", pots: "pots",                                 // what the bank calls them (Monzo pots, Starling Spaces)
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.6.1";
+  const APP_VERSION = "1.7.0";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -514,8 +514,20 @@ footer{text-align:center}
     st.queue.filter(q => q.type === "add").forEach(q => kept.push(Object.assign({}, q.expense, {pending: true})));
     return kept.filter(e => isIso(e.date)).sort((a, b) => b.date.localeCompare(a.date) || (b.row || 1e9) - (a.row || 1e9));
   }
-  // a split payment only counts half against your budget; the other half is settled with your partner
-  function spent(list, cat, from, to, full) { const f = iso(from), t = iso(to); return list.filter(e => e.category === cat && e.date >= f && e.date < t).reduce((s, e) => s + num(e.amount) * (e.shared && !full ? 0.5 : 1), 0); }
+  // split payments: the full amount counts until your partner has paid you back, then only your half
+  function splitInfo() {
+    const as = tab("App settings"); const o = {settled: "", row: -1, owedToMe: 0, iOwe: 0};
+    if (!as) return o;
+    for (let r = 0; r < as.v.length; r++) {
+      const l = String(as.v[r][0] || "").trim();
+      if (/^split payments settled up to/i.test(l)) { o.row = r; o.settled = isIso(as.v[r][1]) ? as.v[r][1] : ""; o.editable = !!(as.e[r] && as.e[r][1]); }
+      else if (/owes you for split/i.test(l)) o.owedToMe = num(as.v[r][1]);
+      else if (/^you owe .* for split/i.test(l)) o.iOwe = num(as.v[r][1]);
+    }
+    return o;
+  }
+  const shareFactor = (e, settled) => e.shared && settled && e.date <= settled ? 0.5 : 1;
+  function spent(list, cat, from, to) { const f = iso(from), t = iso(to), settled = splitInfo().settled; return list.filter(e => e.category === cat && e.date >= f && e.date < t).reduce((s, e) => s + num(e.amount) * shareFactor(e, settled), 0); }
 
   // ---------- render ----------
   function render() {
@@ -672,7 +684,13 @@ footer{text-align:center}
     save();
   }
   function tipKey(t, start) { return "tip|" + iso(start) + "|" + t.from + "|" + t.to; }
-  function openTips(pm) { return pm ? pm.tips.map(t => ({t, key: tipKey(t, pm.cur.start), left: t.amount - (num(st.done?.[tipKey(t, pm.cur.start)]) || 0)})).filter(x => x.left > 0.004) : []; }
+  function openTips(pm) {
+    if (!pm) return [];
+    return pm.tips.map(t => {
+      const key = tipKey(t, pm.cur.start), left = round2(t.amount - (num(st.done?.[key]) || 0));
+      return left < 0 ? {t: {from: t.to, to: t.from, what: new Set([CONFIG.partner + "'s repayment"]), amount: t.amount}, key, left: -left, back: true} : {t, key, left};
+    }).filter(x => x.left > 0.004);
+  }
   function todoItems(m, p, today) {
     const items = [], tIso = iso(today);
     const name = Object.keys(st.snap.tabs || {}).find(n => /^next/i.test(n));
@@ -694,15 +712,25 @@ footer{text-align:center}
       const key = "pay|" + iso(p.start);
       if (left.length && !isDone(key)) items.push({key, what: "Sort your pay into " + CONFIG.pots, sub: left.length + " " + (left.length === 1 ? CONFIG.pot : CONFIG.pots) + " still to move", amount: "", action: "pay", val: true});
     }
-    openTips(potModel()).forEach(x => items.push({key: x.key, what: "Move from " + x.t.from + " to " + x.t.to, sub: "You paid for " + [...x.t.what].join(" and ") + " from " + x.t.to, amount: fmt(x.left), action: "pots", val: round2(x.t.amount)}));
+    openTips(potModel()).forEach(x => items.push({key: x.key, what: "Move from " + x.t.from + " to " + x.t.to, sub: x.back ? CONFIG.partner + " paid you back, so this goes back into " + x.t.to : "You paid for " + [...x.t.what].join(" and ") + " from " + x.t.to, amount: fmt(x.left), action: "pots", val: round2(x.back ? x.t.amount : x.t.amount)}));
+    const sp = splitInfo();
+    if (sp.owedToMe > 0.004 && sp.row >= 0) items.unshift({key: "split-owed", what: CONFIG.partner + " owes you " + fmt(sp.owedToMe) + " for split payments", sub: "Tick once " + CONFIG.partner + " has paid you", amount: "", split: true});
+    if (sp.iOwe > 0.004) items.unshift({key: "split-owe", what: "Pay " + CONFIG.partner + " " + fmt(sp.iOwe) + " for split payments", sub: CONFIG.partner + " ticks it off when it arrives", amount: "", info: true});
     return items;
   }
   function renderTodo(m, p, today) {
     const items = todoItems(m, p, today), ul = $("todo"); ul.innerHTML = "";
     items.forEach(it => {
       const li = document.createElement("li");
-      li.innerHTML = `<input type="checkbox" aria-label="Done: ${esc(it.what)}"><span style="min-width:0"><span class="what">${esc(it.what)}</span><br><span class="small muted">${esc(it.sub)}</span>${it.action ? ` · <button class="link" type="button">${it.action === "pay" ? "Open Payday" : "See " + CONFIG.pots}</button>` : ""}</span><span class="num"${it.good ? ' style="color:var(--good)"' : ""}>${esc(it.amount)}</span>`;
-      li.querySelector("input").addEventListener("change", e => { if (!e.target.checked) return; li.classList.add("gone"); setDone(it.key, it.val); setTimeout(render, 260); });
+      li.innerHTML = `${it.info ? '<span aria-hidden="true" style="width:26px;text-align:center;font-size:1.2rem">•</span>' : `<input type="checkbox" aria-label="Done: ${esc(it.what)}">`}<span style="min-width:0"><span class="what">${esc(it.what)}</span><br><span class="small muted">${esc(it.sub)}</span>${it.action ? ` · <button class="link" type="button">${it.action === "pay" ? "Open Payday" : "See " + CONFIG.pots}</button>` : ""}</span><span class="num"${it.good ? ' style="color:var(--good)"' : ""}>${esc(it.amount)}</span>`;
+      const cb = li.querySelector("input");
+      if (cb && it.split) cb.addEventListener("change", async e => {
+        if (!e.target.checked) return;
+        const sp = splitInfo(); cb.disabled = true;
+        try { await call({action: "set", tab: "App settings", row: sp.row, col: 1, type: "date", value: iso(new Date())}); render(); }
+        catch (err) { cb.checked = false; cb.disabled = false; showErr(err.code === "offline" ? "You're offline. Marking it paid needs a connection." : err.message); }
+      });
+      else if (cb) cb.addEventListener("change", e => { if (!e.target.checked) return; li.classList.add("gone"); setDone(it.key, it.val); setTimeout(render, 260); });
       const b = li.querySelector("button.link"); if (b) b.addEventListener("click", () => show(it.action));
       ul.appendChild(li);
     });
@@ -1044,7 +1072,7 @@ footer{text-align:center}
     const skip = (pot, k) => lActive.length && iso(m.periods[k].next) <= ledger.last && (whole || lNames.has(pot));
     const add = (pot, key, o) => { const x = P.get(pot); const cur = x.parts.get(key) || {label: key, amount: 0, budget: 0, spent: 0, notes: new Set(), kind: o.kind}; cur.amount += o.amount; cur.budget += o.budget || 0; cur.spent += o.spent || 0; if (o.note) cur.notes.add(o.note); x.parts.set(key, cur); x.should += o.amount; };
     const pb = tab("Personal bills");
-    const tips = new Map();
+    const tips = new Map(), settledTo = splitInfo().settled;
     for (let k = 0; k <= idx; k++) {
       const pk = m.periods[k]; const tdays = Math.max(1, dayDiff(pk.start, pk.next));
       let pbPot = null, pbMain = null;
@@ -1076,11 +1104,11 @@ footer{text-align:center}
           const via = viaOf(line.label);
           const key = line.label + suffix + (via ? " · until it goes to " + via.replace(/^send to /i, "") : "");
           if (/spend|keep/.test(w)) {
-            const sp = pi === 0 ? spent(ex, line.label, pk.start, pk.next, true) : 0;
+            const sp = pi === 0 ? spent(ex, line.label, pk.start, pk.next) : 0;
             if (amt > 0 || sp > 0) add(pot, key, {amount: amt - sp, budget: amt, spent: sp, kind: "spend"});
             if (k === idx && pi === 0) ex.filter(e => e.category === line.label && e.date >= iso(pk.start) && e.date < iso(pk.next)).forEach(e => {
               const payer = findPot(e.paidFrom);
-              if (payer && payer !== pot && !skip(payer, k)) { const tk = pot + "→" + payer; const tp = tips.get(tk) || {from: pot, to: payer, amount: 0, what: new Set()}; tp.amount += num(e.amount); tp.what.add(short(line.label).toLowerCase()); tips.set(tk, tp); }
+              if (payer && payer !== pot && !skip(payer, k)) { const tk = pot + "→" + payer; const tp = tips.get(tk) || {from: pot, to: payer, amount: 0, what: new Set()}; tp.amount += num(e.amount) * shareFactor(e, settledTo); tp.what.add(short(line.label).toLowerCase()); tips.set(tk, tp); }
             });
             return;
           }
