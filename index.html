@@ -368,7 +368,7 @@ footer{text-align:center}
     flexWords: "food, fuel and spending",
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.3.0";
+  const APP_VERSION = "1.3.1";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1028,7 +1028,7 @@ footer{text-align:center}
     const pm = potModel(); const list = $("potList"); list.innerHTML = "";
     if (!pm) { $("potInfo").textContent = "Couldn't read the Budget tab."; return; }
     $("potTotal").textContent = fmt(pm.total);
-    $("potInfo").textContent = "Across your main account and pots on " + nice(pm.today) + ", if everything has gone to plan." + (pm.extras.length && pm.cur.name === "Now" ? " This counts money that may not have arrived yet: " + pm.extras.map(x => x.label + " " + fmt(x.amount)).join(", ") + "." : "");
+    $("potInfo").textContent = "Across your main account and pots on " + nice(pm.today) + ", if everything has gone to plan." + (pm.extras.length && pm.cur.name === "Now" && !pm.lActive.some(p => /whole/i.test(p.how)) ? " This counts money that may not have arrived yet: " + pm.extras.map(x => x.label + " " + fmt(x.amount)).join(", ") + "." : "");
     const tIso = iso(pm.today);
     const checked = pm.pots.filter(p => isIso(p.checked) && p.checked === tIso && p.actual !== "");
     const allToday = checked.length && checked.length === pm.pots.filter(p => p.editable).length;
