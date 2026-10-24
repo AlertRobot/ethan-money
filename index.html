@@ -206,9 +206,9 @@ footer{text-align:center}
     </div>
 
     <div class="card">
-      <h2>Import from Monzo</h2>
-      <p class="small muted">In the Monzo app: Account, then Statements and exports, then export as CSV. Choose the file here. Pot moves and money coming in are skipped, and payments already in the sheet are left out.</p>
-      <div class="field"><label for="csv">Monzo export (.csv)</label><input id="csv" type="file"></div>
+      <h2 id="impTitle">Import from your bank</h2>
+      <p class="small muted"><span id="impHelp"></span> Choose the file here. Pot or Space moves and money coming in are skipped, and payments already in the sheet are left out.</p>
+      <div class="field"><label for="csv" id="csvLab">Bank export (.csv)</label><input id="csv" type="file"></div>
       <div id="impBox" hidden style="display:grid;gap:10px">
         <p class="small" id="impInfo"></p>
         <label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="impOld" style="width:22px;height:22px;accent-color:var(--accent)"> Include payments from before the plan started (used for trends only)</label>
@@ -267,8 +267,15 @@ footer{text-align:center}
 <script>
 (() => {
   "use strict";
-  const APP_VERSION = "1.0.0";
-  const KEY = "ethanMoney.v1";
+  // ---- per-person settings (the only part that differs between Ethan's and Sophie's apps) ----
+  const CONFIG = {
+    name: "Ethan's money", key: "ethanMoney.v1", bank: "Monzo",
+    flex: /food|fuel|entertain|gift|household|christmas/i,   // day-to-day budgets shown as tiles
+    pace: /food|entertain/i,                                  // steady spending that gets a pace forecast
+    bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
+  };
+  const APP_VERSION = "1.1.0";
+  const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
   const fmt0 = n => (n < -0.5 ? "-£" : "£") + Math.round(Math.abs(n)).toLocaleString("en-GB");
@@ -281,8 +288,8 @@ footer{text-align:center}
   const round2 = n => Math.round(Number(n) * 100) / 100;
   const todayDate = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
   const dayDiff = (a, b) => Math.round((b - a) / 86400000);
-  const FLEX_RE = /food|fuel|entertain|gift|household|christmas/i;
-  const PACE_RE = /food|entertain/i; // steady day-to-day spending; fuel and one-offs come in lumps, so no pace forecast
+  const FLEX_RE = CONFIG.flex;
+  const PACE_RE = CONFIG.pace; // steady day-to-day spending; fuel and one-offs come in lumps, so no pace forecast
 
   // ---------- local state ----------
   function load() {
@@ -495,7 +502,7 @@ footer{text-align:center}
       li.innerHTML = `<span><span class="what">${esc(short(cat))}</span><br><span class="small muted">${esc(parts.join(" · "))}</span>${flag ? "<br>" + flag : ""}</span><span></span>`;
       ul.appendChild(li); shown++;
     });
-    $("trendNote").textContent = shown ? (histDays >= 14 ? "Based on " + histDays + " days of logged payments before this pay period." : "") : "Trends show once you've logged a full pay month, or imported older Monzo payments (Add tab, tick 'Include payments from before the plan').";
+    $("trendNote").textContent = shown ? (histDays >= 14 ? "Based on " + histDays + " days of logged payments before this pay period." : "") : "Trends show once you've logged a full pay month, or imported older " + CONFIG.bank + " payments (Add tab, tick 'Include payments from before the plan').";
   }
 
   function renderGlance() {
@@ -503,6 +510,12 @@ footer{text-align:center}
     const add = (label, value, sub) => { const li = document.createElement("li"); li.innerHTML = `<span><span class="what">${esc(label)}</span>${sub ? `<br><span class="small muted">${esc(sub)}</span>` : ""}</span><span class="num">${esc(value)}</span>`; ul.appendChild(li); };
     const tm = tab("This month");
     const pick = (t, label) => { const r = findRow(t, label); return r >= 0 ? (t.d[r][1] || "") : null; };
+    const g = findRow(tm, "At a glance");
+    if (g >= 0) {
+      for (let r = g + 1; r < tm.v.length; r++) { const l = String(tm.d[r][0] || "").trim(); if (!l) break; add(l, tm.d[r][1] || "–", ""); }
+      if (!ul.children.length) ul.innerHTML = '<li><span class="muted">Nothing to show yet.</span><span></span></li>';
+      return;
+    }
     const s = pick(tm, "Sophie still owes"); if (s !== null) add("Sophie still owes you", s, "Sophie tab");
     const c = pick(tm, "Christmas left to spend"); if (c !== null) add("Christmas left to spend", c, "Christmas tab");
     const cc = tab("Car costs");
@@ -580,14 +593,15 @@ footer{text-align:center}
   const FUEL = /\b(shell|bp|esso|texaco|gulf|jet|murco|applegreen|valero|fuel|petrol|pfs)\b/i;
   function mapCategory(mcat, name, cats) {
     const has = re => cats.find(c => re.test(c));
-    const c = String(mcat || "").toLowerCase().replace(/\s+/g, "_");
-    if (FUEL.test(name)) return has(/fuel/i);
-    if (c === "groceries") return has(/food/i);
-    if (c === "bills") return has(/personal bills/i);
-    if (c === "home") return has(/household/i);
-    if (c === "gifts" || c === "family") return has(/gift/i);
-    if (c === "transport" && FUEL.test(name)) return has(/fuel/i);
-    return has(/entertain/i) || cats[0];
+    const c = String(mcat || "").toLowerCase().replace(/[\s-]+/g, "_");
+    const fun = () => has(/entertain|fun/i) || cats[0];
+    if (FUEL.test(name)) return has(/fuel/i) || has(/travel/i) || fun();
+    if (/groceries/.test(c)) return has(/food/i) || fun();
+    if (/bills|subscri/.test(c)) return has(/personal bills|phone|subscri/i) || fun();
+    if (/^home|household/.test(c)) return has(/household/i) || fun();
+    if (/gift|family/.test(c)) return has(/gift|christmas/i) || fun();
+    if (/transport/.test(c)) return has(/travel/i) || fun();
+    return fun();
   }
   let imp = [];
   $("csv").addEventListener("change", async ev => {
@@ -597,8 +611,8 @@ footer{text-align:center}
     if (rows.length < 2) { $("impStatus").textContent = "That file looks empty."; return; }
     const head = rows[0].map(h => h.trim().toLowerCase());
     const col = re => head.findIndex(h => re.test(h));
-    const ci = {id: col(/^transaction id$/), date: col(/^date$/), type: col(/^type$/), name: col(/^name$/), cat: col(/^category$/), amt: col(/^amount$/), notes: col(/notes/), desc: col(/^description$/)};
-    if (ci.date < 0 || ci.amt < 0) { $("impStatus").textContent = "I couldn't find the Date and Amount columns. Check it's a Monzo CSV export."; return; }
+    const ci = {id: col(/^transaction id$/), date: col(/^date$/), type: col(/^type$/), name: col(/^name$|^counter ?party$/), cat: col(/category$/), amt: col(/^amount/), notes: col(/notes/), desc: col(/^description$|^reference$/)};
+    if (ci.date < 0 || ci.amt < 0) { $("impStatus").textContent = "I couldn't find the Date and Amount columns. Check it's a " + CONFIG.bank + " CSV export."; return; }
     const cats = st.snap?.categories || [];
     const have = new Set((st.snap?.expenses || []).map(e => e.id).concat(st.queue.filter(q => q.type === "add").map(q => q.expense.id)));
     const m = budgetModel(); const planStart = m && m.periods.length ? iso(m.periods[0].start) : "0000";
@@ -606,12 +620,13 @@ footer{text-align:center}
       const amt = parseFloat(String(r[ci.amt] || "").replace(/[£,\s]/g, ""));
       const d = toIso(r[ci.date]); if (!d || !(amt < 0)) return;
       const type = ci.type >= 0 ? String(r[ci.type]) : "";
-      if (/pot transfer/i.test(type)) return;
+      if (/pot transfer|internal transfer|space/i.test(type)) return;
       const name = ((ci.name >= 0 ? r[ci.name] : "") || (ci.desc >= 0 ? r[ci.desc] : "") || "Payment").trim();
-      const tid = ci.id >= 0 && r[ci.id] ? "monzo-" + r[ci.id].trim() : "monzo-" + d + "-" + Math.abs(amt) + "-" + name.slice(0, 20);
+      const pre = CONFIG.bank.toLowerCase();
+      const tid = ci.id >= 0 && r[ci.id] ? pre + "-" + r[ci.id].trim() : pre + "-" + d + "-" + Math.abs(amt) + "-" + name.slice(0, 24).replace(/[^A-Za-z0-9]/g, "");
       if (have.has(tid) || imp.some(x => x.id === tid)) return;
       const mcat = ci.cat >= 0 ? r[ci.cat] : "";
-      const isBill = /direct debit|standing order/i.test(type) || /bills|savings|transfers|finances/i.test(mcat);
+      const isBill = /direct debit|standing order/i.test(type) || /bills|saving|transfers|finances|payments/i.test(mcat);
       imp.push({id: tid, date: d, amount: round2(-amt), desc: name, category: mapCategory(mcat, name, cats), paidFrom: /flex/i.test(type) ? (st.snap?.paidFrom || []).find(x => x === "Flex") || "Main account" : "Main account", old: d < planStart, on: !isBill && d >= planStart, mcat});
     });
     renderImp();
@@ -635,7 +650,7 @@ footer{text-align:center}
   }
   $("impBtn").addEventListener("click", async () => {
     const todo = imp.filter(x => x.on && (!x.old || $("impOld").checked)); if (!todo.length) { $("impStatus").textContent = "Nothing ticked."; return; }
-    todo.forEach(x => st.queue.push({type: "add", expense: {id: x.id, date: x.date, desc: x.desc, category: x.category, amount: x.amount, paidFrom: x.paidFrom, notes: x.old ? "Imported for trends" : "Imported from Monzo", shared: false}}));
+    todo.forEach(x => st.queue.push({type: "add", expense: {id: x.id, date: x.date, desc: x.desc, category: x.category, amount: x.amount, paidFrom: x.paidFrom, notes: x.old ? "Imported for trends" : "Imported from " + CONFIG.bank, shared: false}}));
     save(); imp = []; $("impBox").hidden = true; $("csv").value = "";
     $("impStatus").textContent = "Adding " + todo.length + " payments…"; render();
     await sync(true);
@@ -707,11 +722,10 @@ footer{text-align:center}
   }
 
   // ---------- sheet view ----------
-  const SHEET_TABS = ["This month", "Budget", "Personal bills", "Car costs", "Savings growth", "Sophie", "Christmas", "App settings"];
   let sheetTab = "Budget";
   function renderSheet() {
     const chips = $("tabChips"); chips.innerHTML = "";
-    SHEET_TABS.filter(n => tab(n)).forEach(n => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = n; b.setAttribute("aria-pressed", String(n === sheetTab)); b.addEventListener("click", () => { sheetTab = n; renderSheet(); }); chips.appendChild(b); });
+    Object.keys(st.snap.tabs || {}).forEach(n => { const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = n; b.setAttribute("aria-pressed", String(n === sheetTab)); b.addEventListener("click", () => { sheetTab = n; renderSheet(); }); chips.appendChild(b); });
     const t = tab(sheetTab); const view = $("sheetView"); view.innerHTML = "";
     if (!t) return;
     const usedCols = Math.max(1, ...t.d.map((r, ri) => { let l = 0; r.forEach((x, i) => { if (String(x).trim() !== "" || t.e[ri][i]) l = i + 1; }); return l; }));
@@ -841,6 +855,9 @@ footer{text-align:center}
     navigator.serviceWorker.addEventListener("controllerchange", () => { if (had && !reloading && !st.queue.length) { reloading = true; location.reload(); } });
   }
 
+  document.title = CONFIG.name.replace(/^./, c => c.toUpperCase()).replace(" money", " Money");
+  document.querySelector("header h1").textContent = CONFIG.name;
+  $("impTitle").textContent = "Import from " + CONFIG.bank; $("impHelp").textContent = CONFIG.bankHelp; $("csvLab").textContent = CONFIG.bank + " export (.csv)";
   render();
   if (st.cfg) sync(true);
   window.__em = {budgetModel, potPlan, currentPeriod, allExpenses};
