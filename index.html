@@ -387,7 +387,7 @@ footer{text-align:center}
     pot: "pot", pots: "pots",                                 // what the bank calls them (Monzo pots, Starling Spaces)
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.7.0";
+  const APP_VERSION = "1.7.1";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -645,6 +645,7 @@ footer{text-align:center}
     const pots = lines.filter(o => o.flex && (o.budget > 0 || o.sp > 0));
     pots.sort((a, b) => (b.drip ? 1 : 0) - (a.drip ? 1 : 0));
     const back = n => n <= 1 ? "Back on track tomorrow." : "Back on track in " + n + " days.";
+    const cash = (potModel() || {}).cash;
     pots.forEach(o => {
       const b = document.createElement("button"); b.type = "button";
       const pct = o.budget > 0 ? Math.min(100, o.sp / o.budget * 100) : (o.sp > 0 ? 100 : 0);
@@ -652,9 +653,12 @@ footer{text-align:center}
       let big, main, sub;
       if (o.drip) {
         const over = o.avail < -0.004;
+        const capped = cash && !over && cash.free < o.avail - 0.004;
         b.className = "tile" + (over ? " warn" : "");
-        big = fmt(Math.max(0, o.avail));
-        main = over ? "to spend today. You're " + fmt(-o.avail) + " over so far. " + back(Math.ceil(-o.avail / o.daily)) : "to spend today";
+        big = fmt(capped ? cash.free : Math.max(0, o.avail));
+        main = over ? "to spend today. You're " + fmt(-o.avail) + " over so far. " + back(Math.ceil(-o.avail / o.daily))
+          : capped ? "free to spend" + (cash.until ? " until " + nice(parseIso(cash.until)) + ", when " + cash.from.replace(/\s*\(.*$/, "").replace(/\s+\d+$/, "").replace(/^From your/i, "the money from your").toLowerCase() + " arrives" : "") + ". The rest of your account is for bills."
+          : "to spend today";
         sub = "+" + fmt(o.daily) + " each day · " + fmt(o.sp) + " of " + fmt(o.budget) + " spent";
         if (Math.abs(o.carry) >= 0.5) sub += o.carry > 0 ? " · includes " + fmt(o.carry) + " saved from earlier months" : " · " + fmt(-o.carry) + " overspent earlier";
       } else {
@@ -1068,6 +1072,7 @@ footer{text-align:center}
     let ledger = null;
     if (lt) { const h = lt.v.findIndex(r => String(r[0]).trim() === "Date" && String(r[1]).trim() === "What"); if (h >= 0) { const fc = lt.v[h].findIndex(x => /^(paid from|from|space|pot)/i.test(String(x).trim())); const rows = []; for (let r = h + 1; r < lt.v.length; r++) if (isIso(lt.v[r][0])) rows.push({date: lt.v[r][0], bal: num(lt.v[r][4]), what: String(lt.d[r][1] || "").trim(), inn: num(lt.v[r][2]), out: num(lt.v[r][3]), from: fc > 0 ? String(lt.v[r][fc] || "").trim() : ""}); if (rows.length) ledger = {name: lname, rows, first: rows[0].date, last: rows[rows.length - 1].date}; } }
     const lActive = pots.filter(p => ledger && /next/i.test(p.how) && tIso >= ledger.first && tIso < ledger.last);
+    let cash = null;
     const lNames = new Set(lActive.map(p => p.name)), whole = lActive.some(p => /whole/i.test(p.how));
     const skip = (pot, k) => lActive.length && iso(m.periods[k].next) <= ledger.last && (whole || lNames.has(pot));
     const add = (pot, key, o) => { const x = P.get(pot); const cur = x.parts.get(key) || {label: key, amount: 0, budget: 0, spent: 0, notes: new Set(), kind: o.kind}; cur.amount += o.amount; cur.budget += o.budget || 0; cur.spent += o.spent || 0; if (o.note) cur.notes.add(o.note); x.parts.set(key, cur); x.should += o.amount; };
@@ -1158,6 +1163,13 @@ footer{text-align:center}
       p.ledger = ledger;
       // before payday the whole account follows the plan tab; money for bills paid from a Space shows in that Space
       if (/whole/i.test(p.how)) {
+        const spentSince = ex.filter(e => e.date >= ledger.first && findPot(e.paidFrom) === p.name).reduce((x, e) => x + num(e.amount), 0);
+        let free = bal - spentSince, until = null, from = "";
+        for (const r of ledger.rows.filter(r => r.date > tIso)) {
+          if (r.inn > 0) { until = r.date; from = r.what; break; }
+          if (r.out > 0 && !FLEX_RE.test(r.what)) free -= r.out;
+        }
+        cash = {free: Math.max(0, round2(free)), until, from};
         let left = bal; const upcoming = ledger.rows.filter(r => r.date > tIso);
         for (const r of upcoming) {
           if (r.inn > 0) break;
@@ -1170,7 +1182,7 @@ footer{text-align:center}
     });
     const cur = m.periods[idx];
     const extras = m.moneyIn.filter(l => !/already in|^pay/i.test(l.label)).map(l => ({label: l.label, amount: cellNum(m.t, l.row, cur.col)})).filter(x => x.amount > 0);
-    return {pots, P, timing: !!tab("Pot timing"), total: pots.reduce((x, p) => x + p.should, 0), tips: [...tips.values()].filter(t => t.amount > 0.004), today, extras, lActive, cur};
+    return {pots, P, cash, timing: !!tab("Pot timing"), total: pots.reduce((x, p) => x + p.should, 0), tips: [...tips.values()].filter(t => t.amount > 0.004), today, extras, lActive, cur};
   }
   // "15th", "1 Dec, 27 Jan", "Varies": a day of the month, the first listed date on or after the start, or null (spread)
   function whenDue(txt, start) {
