@@ -387,9 +387,11 @@ footer{text-align:center}
     flexWords: "food, fuel and spending",
     partner: "Sophie",                                        // who split payments are shared with
     pot: "pot", pots: "pots",                                 // what the bank calls them (Monzo pots, Starling Spaces)
+    fallback: /emergency/i,                                   // the pot that covers going over budget until the next pay
+    fallbackNote: "Your next pay tops the Emergency pot back up",
     bankHelp: "In the Monzo app: Account, then Statements and exports, then export as CSV."
   };
-  const APP_VERSION = "1.8.0";
+  const APP_VERSION = "1.9.0";
   const KEY = CONFIG.key;
   const $ = id => document.getElementById(id);
   const fmt = n => (n < -0.004 ? "-£" : "£") + Math.abs(n).toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -695,13 +697,19 @@ footer{text-align:center}
     const ks = Object.keys(st.done); if (ks.length > 200) ks.slice(0, ks.length - 200).forEach(x => delete st.done[x]);
     save();
   }
-  function tipKey(t, start) { return "tip|" + iso(start) + "|" + t.from + "|" + t.to; }
+  function tipKey(t, start) { return "tip|" + iso(start) + "|" + t.from + "|" + t.to + (t.why === "over" ? "|over" : ""); }
   function openTips(pm) {
     if (!pm) return [];
     return pm.tips.map(t => {
       const key = tipKey(t, pm.cur.start), left = round2(t.amount - (num(st.done?.[key]) || 0));
-      return left < 0 ? {t: {from: t.to, to: t.from, what: new Set([CONFIG.partner + "'s repayment"]), amount: t.amount}, key, left: -left, back: true} : {t, key, left};
+      return left < 0 ? {t: {from: t.to, to: t.from, what: new Set([CONFIG.partner + "'s repayment"]), amount: t.amount, why: t.why}, key, left: -left, back: true} : {t, key, left};
     }).filter(x => x.left > 0.004);
+  }
+  function tipWhy(x) {
+    const w = [...x.t.what].join(" and ");
+    if (x.back) return CONFIG.partner + " paid you back, so this goes back into " + x.t.to;
+    if (x.t.why === "over") return "You went over your " + w + " budget" + (/^main/i.test(x.t.to) ? "" : " paying from " + x.t.to) + ". " + CONFIG.fallbackNote;
+    return "You paid for " + w + " from " + x.t.to;
   }
   function todoItems(m, p, today) {
     const items = [], tIso = iso(today);
@@ -709,11 +717,13 @@ footer{text-align:center}
     const t = name && tab(name);
     if (t) {
       const h = t.v.findIndex(r => String(r[0]).trim() === "Date" && String(r[1]).trim() === "What");
+      const nc = h >= 0 ? t.v[h].findIndex(x => /^notes?$/i.test(String(x).trim())) : -1;
       if (h >= 0) for (let r = h + 1; r < t.v.length; r++) {
         const d = t.v[r][0]; if (!isIso(d) || d > tIso) continue;
         const inn = num(t.v[r][2]), out = num(t.v[r][3]);
         if (!(inn > 0) && !(out > 0)) continue;
         const key = planKey(d, t.d[r][1]); if (isDone(key)) continue;
+        if (nc > 0 && /^(paid|done)\b/i.test(String(t.d[r][nc] || "").trim())) continue;   // the sheet already says it's done
         items.push({key, what: t.d[r][1], sub: d === tIso ? "Today" : nice(parseIso(d)), amount: inn > 0 ? "+" + fmt(inn) : "−" + fmt(out), good: inn > 0, val: true});
       }
     }
@@ -724,7 +734,7 @@ footer{text-align:center}
       const key = "pay|" + iso(p.start);
       if (left.length && !isDone(key)) items.push({key, what: "Sort your pay into " + CONFIG.pots, sub: left.length + " " + (left.length === 1 ? CONFIG.pot : CONFIG.pots) + " still to move", amount: "", action: "pay", val: true});
     }
-    openTips(potModel()).forEach(x => items.push({key: x.key, what: "Move from " + x.t.from + " to " + x.t.to, sub: x.back ? CONFIG.partner + " paid you back, so this goes back into " + x.t.to : "You paid for " + [...x.t.what].join(" and ") + " from " + x.t.to, amount: fmt(x.left), action: "pots", val: round2(x.back ? x.t.amount : x.t.amount)}));
+    openTips(potModel()).forEach(x => items.push({key: x.key, what: "Move from " + x.t.from + " to " + x.t.to, sub: tipWhy(x), amount: fmt(x.left), action: "pots", val: round2(x.back ? x.t.amount : x.t.amount)}));
     const sp = splitInfo();
     if (sp.owedToMe > 0.004 && sp.row >= 0) items.unshift({key: "split-owed", what: CONFIG.partner + " owes you " + fmt(sp.owedToMe) + " for split payments", sub: "Tick once " + CONFIG.partner + " has paid you", amount: "", split: true});
     if (sp.iOwe > 0.004) items.unshift({key: "split-owe", what: "Pay " + CONFIG.partner + " " + fmt(sp.iOwe) + " for split payments", sub: CONFIG.partner + " ticks it off when it arrives", amount: "", info: true});
@@ -1099,6 +1109,12 @@ footer{text-align:center}
     const add = (pot, key, o) => { const x = P.get(pot); const cur = x.parts.get(key) || {label: key, amount: 0, budget: 0, spent: 0, notes: new Set(), kind: o.kind}; cur.amount += o.amount; cur.budget += o.budget || 0; cur.spent += o.spent || 0; if (o.note) cur.notes.add(o.note); x.parts.set(key, cur); x.should += o.amount; };
     const pb = tab("Personal bills");
     const tips = new Map(), settledTo = splitInfo().settled;
+    // spending on or before the last day you checked your real balances is already in them
+    const checkedTo = pots.map(p => p.checked).filter(isIso).sort().pop() || "";
+    const FALLBACK = (pots.find(p => CONFIG.fallback.test(p.name)) || {}).name || null;
+    const addTip = (from, to, amount, what, why) => { if (!from || !to || from === to) return; const tk = from + "→" + to + "|" + why; const tp = tips.get(tk) || {from, to, amount: 0, what: new Set(), why}; tp.amount += amount; tp.what.add(what); tips.set(tk, tp); };
+    // went over budget: the fallback pot covers it now (if the plan tab isn't already handling it)
+    const cover = (to, amount, what, now, k) => { if (!FALLBACK || !(amount > 0.004) || skip(FALLBACK, k)) return; add(FALLBACK, "Covered going over budget", {amount: -amount, kind: "over", note: CONFIG.fallbackNote.toLowerCase()}); if (now) addTip(FALLBACK, to, amount, what, "over"); };
     for (let k = 0; k <= idx; k++) {
       const pk = m.periods[k]; const tdays = Math.max(1, dayDiff(pk.start, pk.next));
       let pbPot = null, pbMain = null;
@@ -1131,11 +1147,26 @@ footer{text-align:center}
           const key = line.label + suffix + (via ? " · until it goes to " + via.replace(/^send to /i, "") : "");
           if (/spend|keep/.test(w)) {
             const sp = pi === 0 ? spent(ex, line.label, pk.start, pk.next) : 0;
-            if (amt > 0 || sp > 0) add(pot, key, {amount: amt - sp, budget: amt, spent: sp, kind: "spend"});
-            if (k === idx && pi === 0) ex.filter(e => e.category === line.label && e.date >= iso(pk.start) && e.date < iso(pk.next)).forEach(e => {
-              const payer = findPot(e.paidFrom);
-              if (payer && payer !== pot && !skip(payer, k)) { const tk = pot + "→" + payer; const tp = tips.get(tk) || {from: pot, to: payer, amount: 0, what: new Set()}; tp.amount += num(e.amount) * shareFactor(e, settledTo); tp.what.add(short(line.label).toLowerCase()); tips.set(tk, tp); }
-            });
+            if (amt > 0 || sp > 0) add(pot, key, {amount: Math.max(0, amt - sp), budget: amt, spent: sp, kind: "spend"});
+            // a line worked out by formula (e.g. "whatever you spent") has no money set aside, so there's nothing to move for it
+            const setAside = !!(m.t.e && m.t.e[line.row] && m.t.e[line.row][pk.col]);
+            if (pi === 0 && setAside) {
+              // Only suggest moves that can really happen: the line's own pot hands over at most what's left of its budget.
+              // Anything over budget comes from the fallback pot (Emergency pot / Savings), and the next pay tops that back up.
+              const now = k === idx, what = short(line.label).toLowerCase();
+              const amtOf = e => num(e.amount) * shareFactor(e, settledTo), own = e => (findPot(e.paidFrom) || pot) === pot;
+              const list = ex.filter(e => e.category === line.label && e.date >= iso(pk.start) && e.date < iso(pk.next)).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+              let avail = amt;
+              list.filter(own).forEach(e => { avail -= amtOf(e); });
+              if (avail < 0 && pot === MAIN) { const recent = list.filter(e => own(e) && e.date > checkedTo).reduce((x, e) => x + amtOf(e), 0); cover(MAIN, Math.min(-avail, recent), what, now, k); }
+              avail = Math.max(0, avail);
+              list.filter(e => !own(e)).forEach(e => {
+                const payer = findPot(e.paidFrom), a = amtOf(e), give = Math.min(a, avail); avail -= give;
+                if (e.date <= checkedTo || skip(payer, k)) return;   // already in the balances you checked, or the plan tab handles it
+                if (now && give > 0.004) addTip(pot, payer, give, what, "paid");
+                if (a - give > 0.004) cover(payer, a - give, what, now, k);
+              });
+            }
             return;
           }
           if (!(amt > 0)) return;
@@ -1226,9 +1257,9 @@ footer{text-align:center}
     $("potInfo").textContent = "Across your main account and " + CONFIG.pots + " on " + nice(pm.today) + ", if everything has gone to plan." + (pm.extras.length && pm.cur.name === "Now" && !pm.timing && !pm.lActive.some(p => /whole/i.test(p.how)) ? " This counts money that may not have arrived yet: " + pm.extras.map(x => x.label + " " + fmt(x.amount)).join(", ") + "." : "");
     const tl = $("potTips"); tl.innerHTML = "";
     const open = openTips(pm);
-    open.forEach(({t, left}) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<span style="min-width:0">Move from <b>${esc(t.from)}</b> to <b>${esc(t.to)}</b><br><span class="small muted">You paid for ${esc([...t.what].join(" and "))} from ${esc(t.to)}.</span></span><span class="num">${fmt(left)}</span>`;
+    open.forEach(x => {
+      const {t, left} = x, li = document.createElement("li");
+      li.innerHTML = `<span style="min-width:0">Move from <b>${esc(t.from)}</b> to <b>${esc(t.to)}</b><br><span class="small muted">${esc(tipWhy(x))}.</span></span><span class="num">${fmt(left)}</span>`;
       tl.appendChild(li);
     });
     $("potTipsCard").hidden = !open.length;
